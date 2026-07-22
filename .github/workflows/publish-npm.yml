@@ -54,10 +54,24 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check published version
+        id: published
+        run: |
+          PACKAGE_NAME=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).name")
+          PACKAGE_VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
+          if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+            echo "published=true" >> "${GITHUB_OUTPUT}"
+            echo "${PACKAGE_NAME}@${PACKAGE_VERSION} is already published; skipping."
+          else
+            echo "published=false" >> "${GITHUB_OUTPUT}"
+          fi
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: steps.published.outputs.published != 'true'
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm ci --ignore-scripts --no-fund --no-audit
+        if: steps.published.outputs.published != 'true'
       - run: npm publish --access public --provenance --ignore-scripts
+        if: steps.published.outputs.published != 'true'
