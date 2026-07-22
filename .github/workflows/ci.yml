@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  secret-scan:
+    name: Secret Scan
+    uses: kontourai/.github/.github/workflows/secret-scan.yml@main
+    permissions:
+      contents: read
+
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22', '24']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts --no-fund --no-audit
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Veritas readiness
+        run: npm run veritas:readiness -- --run-id "ci-${{ github.run_id }}-${{ matrix.node-version }}" --force
