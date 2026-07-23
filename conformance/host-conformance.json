@@ -3,7 +3,7 @@
   "adapters": [
     {
       "adapterId": "claude-code",
-      "adapterVersion": "0.1.0",
+      "adapterVersion": "0.2.0",
       "hostId": "claude-code",
       "hostVersion": "public-hooks",
       "capabilities": {
@@ -74,7 +74,7 @@
     },
     {
       "adapterId": "codex",
-      "adapterVersion": "0.1.0",
+      "adapterVersion": "0.2.0",
       "hostId": "codex",
       "hostVersion": "public-config",
       "capabilities": {
@@ -145,7 +145,7 @@
     },
     {
       "adapterId": "opencode",
-      "adapterVersion": "0.1.0",
+      "adapterVersion": "0.2.0",
       "hostId": "opencode",
       "hostVersion": "public-plugin-api",
       "capabilities": {
@@ -215,7 +215,7 @@
     },
     {
       "adapterId": "strands",
-      "adapterVersion": "0.1.0",
+      "adapterVersion": "0.2.0",
       "hostId": "strands",
       "hostVersion": "caller-bound",
       "capabilities": {
@@ -285,7 +285,7 @@
     },
     {
       "adapterId": "voltagent",
-      "adapterVersion": "0.1.0",
+      "adapterVersion": "0.2.0",
       "hostId": "voltagent",
       "hostVersion": "caller-bound",
       "capabilities": {
