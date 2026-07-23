@@ -134,6 +134,61 @@ export interface ConformanceReport {
   adapters: readonly AdapterConformanceEvidence[];
 }
 
+const fidelityLimit = (
+  path: string,
+  fidelity: IntegrationFidelity,
+): string | undefined =>
+  fidelity === "native" ? undefined : `capability.${path}=${fidelity}`;
+
+/**
+ * Derive stable, product-neutral limitations from declared fidelity and probe
+ * results. Host profiles may add explanatory prose separately.
+ */
+export function deriveConformanceLimitations(
+  capabilities: HostCapabilities,
+  results: readonly ConformanceResult[],
+): readonly string[] {
+  const limitations = new Set<string>();
+  for (const phase of [
+    "session-start",
+    "before-model",
+    "before-tool",
+    "after-tool",
+    "stop",
+  ] as const) {
+    const limitation = fidelityLimit(
+      `lifecycle.${phase}`,
+      capabilities.lifecycle[phase],
+    );
+    if (limitation) limitations.add(limitation);
+  }
+  for (const [path, fidelity] of [
+    ["contextInjection", capabilities.contextInjection],
+    ["blocking", capabilities.blocking],
+  ] as const) {
+    const limitation = fidelityLimit(path, fidelity);
+    if (limitation) limitations.add(limitation);
+  }
+  for (const kind of [
+    "skill",
+    "agent",
+    "hook",
+    "prompt",
+    "command",
+    "context",
+  ] as const) {
+    const limitation = fidelityLimit(
+      `install.${kind}`,
+      capabilities.install[kind],
+    );
+    if (limitation) limitations.add(limitation);
+  }
+  for (const result of results) {
+    if (result.status === "fail") limitations.add(`probe.${result.check}=fail`);
+  }
+  return Object.freeze([...limitations].sort());
+}
+
 export async function probeHostConformance(adapter: AgentHostAdapter): Promise<readonly ConformanceResult[]> {
   const results: ConformanceResult[] = [];
   const caps = adapter.capabilities();
@@ -175,16 +230,28 @@ export interface EvidenceInput {
 
 /** Build stable, timestamp-free evidence. Inputs and nested checks are sorted by identity. */
 export async function createConformanceReport(inputs: readonly EvidenceInput[]): Promise<ConformanceReport> {
-  const adapters = await Promise.all([...inputs].sort((a, b) => a.adapter.id.localeCompare(b.adapter.id)).map(async input => ({
-    evidenceScope: input.evidenceScope,
-    adapterId: input.adapter.id,
-    adapterVersion: input.adapterVersion,
-    hostId: input.hostId,
-    hostVersion: input.hostVersion,
-    capabilities: normalizeCapabilities(input.adapter.capabilities()),
-    limitations: Object.freeze([...(input.limitations ?? [])].sort()),
-    results: Object.freeze([...(await probeHostConformance(input.adapter))].sort((a, b) => a.check.localeCompare(b.check))),
-  })));
+  const adapters = await Promise.all([...inputs].sort((a, b) => a.adapter.id.localeCompare(b.adapter.id)).map(async input => {
+    const capabilities = normalizeCapabilities(input.adapter.capabilities());
+    const results = Object.freeze(
+      [...(await probeHostConformance(input.adapter))].sort((a, b) =>
+        a.check.localeCompare(b.check),
+      ),
+    );
+    const limitations = new Set([
+      ...(input.limitations ?? []),
+      ...deriveConformanceLimitations(capabilities, results),
+    ]);
+    return {
+      evidenceScope: input.evidenceScope,
+      adapterId: input.adapter.id,
+      adapterVersion: input.adapterVersion,
+      hostId: input.hostId,
+      hostVersion: input.hostVersion,
+      capabilities,
+      limitations: Object.freeze([...limitations].sort()),
+      results,
+    };
+  }));
   return Object.freeze({ schemaVersion: "1", adapters: Object.freeze(adapters) });
 }
 

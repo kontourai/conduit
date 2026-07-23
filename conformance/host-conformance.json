@@ -28,6 +28,8 @@
       },
       "limitations": [
         "before-model is projected through prompt submission hooks",
+        "capability.install.context=static-only",
+        "capability.lifecycle.before-model=approximated",
         "context assets are static instructions",
         "host extension surfaces are not exercised by this reference row"
       ],
@@ -100,6 +102,18 @@
         }
       },
       "limitations": [
+        "capability.blocking=unavailable",
+        "capability.contextInjection=static-only",
+        "capability.install.agent=unavailable",
+        "capability.install.command=unavailable",
+        "capability.install.context=static-only",
+        "capability.install.hook=unavailable",
+        "capability.install.prompt=static-only",
+        "capability.lifecycle.after-tool=unavailable",
+        "capability.lifecycle.before-model=unavailable",
+        "capability.lifecycle.before-tool=unavailable",
+        "capability.lifecycle.session-start=unavailable",
+        "capability.lifecycle.stop=observational",
         "host extension surfaces are not exercised by this reference row",
         "lifecycle observation requires host-owned notification binding",
         "no public synchronous tool-blocking hook"
@@ -173,6 +187,7 @@
         }
       },
       "limitations": [
+        "capability.lifecycle.stop=approximated",
         "host extension surfaces are not exercised by this reference row",
         "stop is derived from session lifecycle events"
       ],
@@ -245,6 +260,9 @@
         }
       },
       "limitations": [
+        "capability.install.agent=approximated",
+        "capability.install.command=approximated",
+        "capability.install.skill=approximated",
         "framework objects and hook registration are supplied by the caller",
         "host extension surfaces are not exercised by this reference row"
       ],
@@ -317,6 +335,8 @@
         }
       },
       "limitations": [
+        "capability.install.command=approximated",
+        "capability.install.skill=approximated",
         "framework objects and hook registration are supplied by the caller",
         "host extension surfaces are not exercised by this reference row"
       ],
