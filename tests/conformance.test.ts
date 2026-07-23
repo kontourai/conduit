@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   bindAdapterLifecycle, claudeCodeCapabilities, codexCapabilities, createClaudeCodeAdapter, createCodexAdapter,
   createConformanceReport, createInProcessHostAdapter, createManifestHarnessAdapter,
+  deriveConformanceLimitations,
   createOpenCodeAdapter, createStrandsAdapter, createVoltAgentAdapter, openCodeCapabilities,
   probeHostConformance, renderConformanceMatrix, serializeConformanceReport,
   strandsCapabilities, voltAgentCapabilities, type EvidenceInput, type HostCapabilities,
@@ -58,7 +59,11 @@ describe("Conduit host conformance", () => {
     const second = await createConformanceReport([...inputs].reverse());
     assert.equal(serializeConformanceReport(first), serializeConformanceReport(second));
     assert.deepEqual(first.adapters.map(adapter => adapter.adapterId), ["codex", "opencode"]);
-    assert.deepEqual(first.adapters[1]?.limitations, ["a", "z"]);
+    assert.deepEqual(first.adapters[1]?.limitations, [
+      "a",
+      "capability.lifecycle.stop=approximated",
+      "z",
+    ]);
     const markdown = renderConformanceMatrix(first);
     assert.match(markdown, /\| codex \|/);
     assert.ok(markdown.indexOf("| codex |") < markdown.indexOf("| opencode |"));
@@ -69,6 +74,107 @@ describe("Conduit host conformance", () => {
     };
     const reordered = await createConformanceReport([{ adapter: createManifestHarnessAdapter({ id: "fixture", capabilities: reorderedCapabilities, ...binding }), evidenceScope: "host-bound", adapterVersion: "1", hostId: "fixture", hostVersion: "1" }]);
     assert.deepEqual(Object.keys(reordered.adapters[0]?.capabilities.lifecycle ?? {}), ["session-start", "before-model", "before-tool", "after-tool", "stop"]);
+  });
+  it("derives every non-native capability and failed probe as a stable limitation", () => {
+    const capabilities: HostCapabilities = {
+      lifecycle: {
+        "session-start": "native",
+        "before-model": "approximated",
+        "before-tool": "observational",
+        "after-tool": "static-only",
+        stop: "unavailable",
+      },
+      contextInjection: "static-only",
+      blocking: "unavailable",
+      install: {
+        skill: "native",
+        agent: "approximated",
+        hook: "observational",
+        prompt: "static-only",
+        command: "unavailable",
+        context: "native",
+      },
+    };
+    assert.deepEqual(deriveConformanceLimitations(capabilities, [
+      { check: "z-check", status: "fail", detail: "runtime-specific detail" },
+      { check: "a-check", status: "pass" },
+      { check: "z-check", status: "fail" },
+    ]), [
+      "capability.blocking=unavailable",
+      "capability.contextInjection=static-only",
+      "capability.install.agent=approximated",
+      "capability.install.command=unavailable",
+      "capability.install.hook=observational",
+      "capability.install.prompt=static-only",
+      "capability.lifecycle.after-tool=static-only",
+      "capability.lifecycle.before-model=approximated",
+      "capability.lifecycle.before-tool=observational",
+      "capability.lifecycle.stop=unavailable",
+      "probe.z-check=fail",
+    ]);
+  });
+  it("merges derived limitations with host prose once for JSON and Markdown", async () => {
+    const unavailable: HostCapabilities = {
+      lifecycle: lifecycle("unavailable"),
+      contextInjection: "unavailable",
+      blocking: "unavailable",
+      install: all("unavailable"),
+    };
+    const adapter = createManifestHarnessAdapter({
+      id: "limited",
+      capabilities: unavailable,
+      resolveTarget: () => undefined,
+      write: () => {},
+    });
+    const report = await createConformanceReport([{
+      adapter,
+      evidenceScope: "adapter-contract",
+      adapterVersion: "1",
+      hostId: "unbound",
+      hostVersion: "unbound",
+      limitations: [
+        "host-specific explanation",
+        "capability.blocking=unavailable",
+      ],
+    }]);
+    const limitations = report.adapters[0]?.limitations ?? [];
+    assert.equal(
+      limitations.filter(value => value === "capability.blocking=unavailable").length,
+      1,
+    );
+    assert.ok(limitations.includes("host-specific explanation"));
+    assert.match(
+      renderConformanceMatrix(report),
+      /capability\.blocking=unavailable.*host-specific explanation/,
+    );
+    assert.match(
+      serializeConformanceReport(report),
+      /"capability\.blocking=unavailable"/,
+    );
+  });
+  it("projects failed executable probes into report limitations", async () => {
+    const adapter = createInProcessHostAdapter({
+      id: "failing-probe",
+      capabilities: native,
+      installAsset: () => {},
+      applyOutcome: () => ({ decision: "observe" }),
+    });
+    const report = await createConformanceReport([{
+      adapter,
+      evidenceScope: "adapter-contract",
+      adapterVersion: "1",
+      hostId: "unbound",
+      hostVersion: "unbound",
+    }]);
+    assert.deepEqual(report.adapters[0]?.limitations, [
+      "probe.context-fidelity=fail",
+      "probe.deny-fidelity=fail",
+      "probe.lifecycle-after-tool=fail",
+      "probe.lifecycle-before-model=fail",
+      "probe.lifecycle-before-tool=fail",
+      "probe.lifecycle-session-start=fail",
+      "probe.lifecycle-stop=fail",
+    ]);
   });
   it("binds the same evaluator to caller-owned framework registrars", async () => {
     const handlers = new Map<string, (event: { phase: "before-tool"; sessionId: string }) => Promise<unknown>>();

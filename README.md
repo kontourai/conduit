@@ -19,6 +19,12 @@ Two adapter shapes ship initially:
 receipts contain asset identities, kinds, and SHA-256 digests, never asset
 contents, host-resolved targets, or credentials.
 
+`deriveConformanceLimitations()` converts every non-native capability fidelity
+and failed executable probe into a stable, product-neutral limitation. Reports
+merge those derived entries with optional host-authored explanatory prose,
+deduplicate them, and use the same sorted list for JSON and Markdown evidence.
+Native capabilities and passing probes do not produce limitations.
+
 ## Shipped host profiles
 
 Conduit includes `createClaudeCodeAdapter`, `createCodexAdapter`, and
