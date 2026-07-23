@@ -1,7 +1,8 @@
 # Conduit
 
 Conduit is the portable boundary between agent products and the places they run.
-It describes lifecycle influence, context injection, blocking fidelity, and
+It describes lifecycle events, phase-specific context injection and decision
+fidelity, and
 installation of skills, agents, hooks, prompts, commands, and context assets.
 
 Conduit does not define workflows, prompts, gates, evidence policy, model
@@ -58,6 +59,15 @@ Capability values distinguish `native`, `approximated`, `observational`,
 `static-only`, and `unavailable`. The Codex profile does not claim synchronous
 tool blocking. Strands and VoltAgent remain caller-bound because Conduit does
 not depend on their runtime packages.
+
+Every lifecycle phase has separate `decision` and `contextInjection` fidelity.
+This prevents a host with native pre-tool denial, for example, from appearing
+to support denial at session start or after a tool result. `native` and
+`approximated` can affect execution; `observational`, `static-only`, and
+`unavailable` are projected without dynamic influence. The deprecated
+aggregate `blocking` and `contextInjection` fields remain accepted for source
+compatibility. `normalizeCapabilities()` migrates them deterministically to
+all phases when an older caller omits `influence`.
 
 Reference rows are explicitly `adapter-contract` evidence: they prove the
 projection and redaction contract, not a live host. A consumer records
@@ -133,7 +143,10 @@ timestamp-free JSON in `conformance/host-conformance.json` plus the generated
 matrix in `docs/host-conformance.md`. `npm run conformance:check` fails when
 either artifact is stale and runs inside `npm run verify` and CI.
 The published `schemas/host-conformance.schema.json` defines the versioned
-machine-readable result contract.
+machine-readable result contract. Schema version 2 records phase influence;
+`parseConformanceReport()` rejects other versions with
+`UnsupportedConformanceSchemaVersionError` instead of silently reinterpreting
+evidence.
 
 Reference host versions name the verified extension seam (`public-hooks`,
 `public-config`, `public-plugin-api`, or `caller-bound`) rather than making an

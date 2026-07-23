@@ -18,6 +18,10 @@ describe("Pi host profile", () => {
     );
     assert.equal(piCapabilities.install.agent, "unavailable");
     assert.equal(piCapabilities.install.context, "static-only");
+    assert.equal(piCapabilities.influence?.["before-tool"].decision, "native");
+    assert.equal(piCapabilities.influence?.stop.decision, "unavailable");
+    assert.equal(piCapabilities.influence?.["before-model"].contextInjection, "native");
+    assert.equal(piCapabilities.influence?.["after-tool"].contextInjection, "unavailable");
   });
 
   it("binds Pi extension lifecycle, context, blocking, and completion", async () => {

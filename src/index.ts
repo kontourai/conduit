@@ -4,10 +4,28 @@ export type IntegrationFidelity = "native" | "approximated" | "observational" | 
 export type LifecyclePhase = "session-start" | "before-model" | "before-tool" | "after-tool" | "stop";
 export type AssetKind = "skill" | "agent" | "hook" | "prompt" | "command" | "context";
 
+export interface LifecycleInfluence {
+  decision: IntegrationFidelity;
+  contextInjection: IntegrationFidelity;
+}
+
 export interface HostCapabilities {
   lifecycle: Readonly<Record<LifecyclePhase, IntegrationFidelity>>;
+  /**
+   * Phase-specific influence. When omitted, Conduit applies the documented
+   * legacy migration from the aggregate fields below.
+   */
+  influence?: Readonly<Record<LifecyclePhase, Readonly<LifecycleInfluence>>>;
+  /** @deprecated Use `influence[phase].contextInjection`. */
   contextInjection: IntegrationFidelity;
+  /** @deprecated Use `influence[phase].decision`. */
   blocking: IntegrationFidelity;
+  install: Readonly<Record<AssetKind, IntegrationFidelity>>;
+}
+
+export interface NormalizedHostCapabilities {
+  lifecycle: Readonly<Record<LifecyclePhase, IntegrationFidelity>>;
+  influence: Readonly<Record<LifecyclePhase, Readonly<LifecycleInfluence>>>;
   install: Readonly<Record<AssetKind, IntegrationFidelity>>;
 }
 
@@ -50,6 +68,27 @@ export interface ManifestHarnessOptions {
   write(target: string, content: string): void | Promise<void>;
 }
 
+const projectCapability = (
+  capabilities: HostCapabilities,
+  event: LifecycleEvent,
+  outcome: LifecycleOutcome,
+): LifecycleOutcome => {
+  const normalized = normalizeCapabilities(capabilities);
+  if (normalized.lifecycle[event.phase] === "unavailable") {
+    return Object.freeze({ decision: "observe", reason: "lifecycle phase unavailable" });
+  }
+  if (outcome.decision === "deny" && !canInfluence(normalized.influence[event.phase].decision)) {
+    return Object.freeze({ ...outcome, decision: "observe", reason: outcome.reason ?? "host cannot block" });
+  }
+  if (outcome.modelContext && !canInfluence(normalized.influence[event.phase].contextInjection)) {
+    return Object.freeze({ ...outcome, modelContext: undefined, reason: outcome.reason ?? "host cannot inject context" });
+  }
+  return outcome;
+};
+
+const canInfluence = (fidelity: IntegrationFidelity): boolean =>
+  fidelity === "native" || fidelity === "approximated";
+
 /** Harness adapter with host-owned path mapping and I/O. Conduit never guesses config locations. */
 export function createManifestHarnessAdapter(options: ManifestHarnessOptions): AgentHostAdapter {
   return {
@@ -71,17 +110,7 @@ export function createManifestHarnessAdapter(options: ManifestHarnessOptions): A
       return Object.freeze({ hostId: options.id, installed: Object.freeze(installed), skipped: Object.freeze(skipped) });
     },
     async project(event, outcome) {
-      const fidelity = options.capabilities.lifecycle[event.phase];
-      if (fidelity === "unavailable") {
-        return Object.freeze({ decision: "observe", reason: "lifecycle phase unavailable" });
-      }
-      if (outcome.decision === "deny" && options.capabilities.blocking === "unavailable") {
-        return Object.freeze({ ...outcome, decision: "observe", reason: outcome.reason ?? "host cannot block" });
-      }
-      if (outcome.modelContext && options.capabilities.contextInjection === "unavailable") {
-        return Object.freeze({ ...outcome, modelContext: undefined, reason: outcome.reason ?? "host cannot inject context" });
-      }
-      return outcome;
+      return projectCapability(options.capabilities, event, outcome);
     },
   };
 }
@@ -111,7 +140,13 @@ export function createInProcessHostAdapter(options: InProcessHostOptions): Agent
       }
       return Object.freeze({ hostId: options.id, installed: Object.freeze(installed), skipped: Object.freeze(skipped) });
     },
-    async project(event, outcome) { return await options.applyOutcome(event, outcome); },
+    async project(event, outcome) {
+      return projectCapability(
+        options.capabilities,
+        event,
+        await options.applyOutcome(event, outcome),
+      );
+    },
   };
 }
 
@@ -124,14 +159,22 @@ export interface AdapterConformanceEvidence {
   adapterVersion: string;
   hostId: string;
   hostVersion: string;
-  capabilities: HostCapabilities;
+  capabilities: NormalizedHostCapabilities;
   limitations: readonly string[];
   results: readonly ConformanceResult[];
 }
 
 export interface ConformanceReport {
-  schemaVersion: "1";
+  schemaVersion: "2";
   adapters: readonly AdapterConformanceEvidence[];
+}
+
+export class UnsupportedConformanceSchemaVersionError extends Error {
+  readonly code = "UNSUPPORTED_CONFORMANCE_SCHEMA_VERSION";
+  constructor(readonly schemaVersion: unknown) {
+    super(`Unsupported Conduit conformance schema version: ${String(schemaVersion)}`);
+    this.name = "UnsupportedConformanceSchemaVersionError";
+  }
 }
 
 const fidelityLimit = (
@@ -148,6 +191,7 @@ export function deriveConformanceLimitations(
   capabilities: HostCapabilities,
   results: readonly ConformanceResult[],
 ): readonly string[] {
+  const normalized = normalizeCapabilities(capabilities);
   const limitations = new Set<string>();
   for (const phase of [
     "session-start",
@@ -158,16 +202,16 @@ export function deriveConformanceLimitations(
   ] as const) {
     const limitation = fidelityLimit(
       `lifecycle.${phase}`,
-      capabilities.lifecycle[phase],
+      normalized.lifecycle[phase],
     );
     if (limitation) limitations.add(limitation);
-  }
-  for (const [path, fidelity] of [
-    ["contextInjection", capabilities.contextInjection],
-    ["blocking", capabilities.blocking],
-  ] as const) {
-    const limitation = fidelityLimit(path, fidelity);
-    if (limitation) limitations.add(limitation);
+    for (const key of ["decision", "contextInjection"] as const) {
+      const influenceLimitation = fidelityLimit(
+        `influence.${phase}.${key}`,
+        normalized.influence[phase][key],
+      );
+      if (influenceLimitation) limitations.add(influenceLimitation);
+    }
   }
   for (const kind of [
     "skill",
@@ -179,7 +223,7 @@ export function deriveConformanceLimitations(
   ] as const) {
     const limitation = fidelityLimit(
       `install.${kind}`,
-      capabilities.install[kind],
+      normalized.install[kind],
     );
     if (limitation) limitations.add(limitation);
   }
@@ -191,10 +235,11 @@ export function deriveConformanceLimitations(
 
 export async function probeHostConformance(adapter: AgentHostAdapter): Promise<readonly ConformanceResult[]> {
   const results: ConformanceResult[] = [];
-  const caps = adapter.capabilities();
+  const caps = normalizeCapabilities(adapter.capabilities());
   const validFidelities: readonly IntegrationFidelity[] = ["native", "approximated", "observational", "static-only", "unavailable"];
-  const capabilityValues = [...Object.values(caps.lifecycle), caps.contextInjection, caps.blocking, ...Object.values(caps.install)];
-  results.push({ check: "capability-completeness", status: Object.keys(caps.lifecycle).length === 5 && Object.keys(caps.install).length === 6 && capabilityValues.every(value => validFidelities.includes(value)) ? "pass" : "fail" });
+  const influenceValues = Object.values(caps.influence).flatMap(value => [value.decision, value.contextInjection]);
+  const capabilityValues = [...Object.values(caps.lifecycle), ...influenceValues, ...Object.values(caps.install)];
+  results.push({ check: "capability-completeness", status: Object.keys(caps.lifecycle).length === 5 && Object.keys(caps.influence).length === 5 && Object.keys(caps.install).length === 6 && capabilityValues.every(value => validFidelities.includes(value)) ? "pass" : "fail" });
   const kinds: readonly AssetKind[] = ["skill", "agent", "hook", "prompt", "command", "context"];
   const receipt = await adapter.install(kinds.map(kind => ({ id: `conformance-${kind}`, kind, content: `conduit-private-${kind}-content` })));
   const serializedReceipt = JSON.stringify(receipt);
@@ -208,14 +253,16 @@ export async function probeHostConformance(adapter: AgentHostAdapter): Promise<r
     const expected = caps.lifecycle[phase] === "unavailable" ? "observe" : "allow";
     results.push({ check: `lifecycle-${phase}`, status: projected.decision === expected ? "pass" : "fail" });
   }
-  const deny = await adapter.project({ phase: "before-tool", sessionId: "conformance" }, { decision: "deny", reason: "policy denied" });
-  const expected = caps.blocking === "unavailable" ? "observe" : "deny";
-  results.push({ check: "deny-fidelity", status: deny.decision === expected && Boolean(deny.reason) ? "pass" : "fail" });
-  const context = await adapter.project({ phase: "before-model", sessionId: "conformance" }, { decision: "allow", modelContext: "conduit-private-context" });
-  const contextMatches = caps.lifecycle["before-model"] === "unavailable" || caps.contextInjection === "unavailable"
-    ? context.modelContext === undefined
-    : context.modelContext === "conduit-private-context";
-  results.push({ check: "context-fidelity", status: contextMatches ? "pass" : "fail" });
+  for (const phase of lifecyclePhases) {
+    const deny = await adapter.project({ phase, sessionId: "conformance" }, { decision: "deny", reason: "policy denied" });
+    const expected = caps.lifecycle[phase] === "unavailable" || !canInfluence(caps.influence[phase].decision) ? "observe" : "deny";
+    results.push({ check: `decision-${phase}`, status: deny.decision === expected && Boolean(deny.reason) ? "pass" : "fail" });
+    const context = await adapter.project({ phase, sessionId: "conformance" }, { decision: "allow", modelContext: "conduit-private-context" });
+    const contextMatches = caps.lifecycle[phase] === "unavailable" || !canInfluence(caps.influence[phase].contextInjection)
+      ? context.modelContext === undefined
+      : context.modelContext === "conduit-private-context";
+    results.push({ check: `context-${phase}`, status: contextMatches ? "pass" : "fail" });
+  }
   return Object.freeze(results);
 }
 
@@ -239,7 +286,7 @@ export async function createConformanceReport(inputs: readonly EvidenceInput[]):
     );
     const limitations = new Set([
       ...(input.limitations ?? []),
-      ...deriveConformanceLimitations(capabilities, results),
+      ...deriveConformanceLimitations(input.adapter.capabilities(), results),
     ]);
     return {
       evidenceScope: input.evidenceScope,
@@ -252,10 +299,20 @@ export async function createConformanceReport(inputs: readonly EvidenceInput[]):
       results,
     };
   }));
-  return Object.freeze({ schemaVersion: "1", adapters: Object.freeze(adapters) });
+  return Object.freeze({ schemaVersion: "2", adapters: Object.freeze(adapters) });
 }
 
-function normalizeCapabilities(capabilities: HostCapabilities): HostCapabilities {
+const lifecyclePhases = ["session-start", "before-model", "before-tool", "after-tool", "stop"] as const;
+
+/** Normalize legacy aggregate influence into explicit per-phase claims. */
+export function normalizeCapabilities(capabilities: HostCapabilities): NormalizedHostCapabilities {
+  const influence = Object.fromEntries(lifecyclePhases.map(phase => [
+    phase,
+    Object.freeze(capabilities.influence?.[phase] ?? {
+      decision: capabilities.blocking,
+      contextInjection: capabilities.contextInjection,
+    }),
+  ])) as unknown as NormalizedHostCapabilities["influence"];
   return Object.freeze({
     lifecycle: Object.freeze({
       "session-start": capabilities.lifecycle["session-start"],
@@ -264,8 +321,7 @@ function normalizeCapabilities(capabilities: HostCapabilities): HostCapabilities
       "after-tool": capabilities.lifecycle["after-tool"],
       stop: capabilities.lifecycle.stop,
     }),
-    contextInjection: capabilities.contextInjection,
-    blocking: capabilities.blocking,
+    influence: Object.freeze(influence),
     install: Object.freeze({
       skill: capabilities.install.skill,
       agent: capabilities.install.agent,
@@ -279,6 +335,19 @@ function normalizeCapabilities(capabilities: HostCapabilities): HostCapabilities
 
 export function serializeConformanceReport(report: ConformanceReport): string {
   return `${JSON.stringify(report, null, 2)}\n`;
+}
+
+/** Parse only the current evidence contract; older reports fail explicitly. */
+export function parseConformanceReport(serialized: string): ConformanceReport {
+  const value: unknown = JSON.parse(serialized);
+  if (!value || typeof value !== "object" || !("schemaVersion" in value) || value.schemaVersion !== "2") {
+    throw new UnsupportedConformanceSchemaVersionError(
+      value && typeof value === "object" && "schemaVersion" in value
+        ? value.schemaVersion
+        : undefined,
+    );
+  }
+  return value as ConformanceReport;
 }
 
 const lifecycle = (
@@ -295,6 +364,22 @@ const lifecycle = (
   stop,
 });
 
+const influence = (
+  values: Partial<Record<LifecyclePhase, Partial<LifecycleInfluence>>>,
+  fallback: LifecycleInfluence = {
+    decision: "unavailable",
+    contextInjection: "unavailable",
+  },
+): NormalizedHostCapabilities["influence"] => Object.freeze(
+  Object.fromEntries(lifecyclePhases.map(phase => [
+    phase,
+    Object.freeze({
+      decision: values[phase]?.decision ?? fallback.decision,
+      contextInjection: values[phase]?.contextInjection ?? fallback.contextInjection,
+    }),
+  ])) as unknown as NormalizedHostCapabilities["influence"],
+);
+
 const install = (values: Partial<Record<AssetKind, IntegrationFidelity>>): HostCapabilities["install"] => Object.freeze({
   skill: values.skill ?? "unavailable",
   agent: values.agent ?? "unavailable",
@@ -307,6 +392,12 @@ const install = (values: Partial<Record<AssetKind, IntegrationFidelity>>): HostC
 /** Public host profiles. They describe extension-surface fidelity, not configuration discovery. */
 export const claudeCodeCapabilities: HostCapabilities = Object.freeze({
   lifecycle: lifecycle("native", "approximated", "native", "native", "native"),
+  influence: influence({
+    "session-start": { contextInjection: "native" },
+    "before-model": { contextInjection: "native" },
+    "before-tool": { decision: "native" },
+    stop: { decision: "native" },
+  }),
   contextInjection: "native",
   blocking: "native",
   install: install({ skill: "native", agent: "native", hook: "native", prompt: "native", command: "native", context: "static-only" }),
@@ -314,6 +405,7 @@ export const claudeCodeCapabilities: HostCapabilities = Object.freeze({
 
 export const codexCapabilities: HostCapabilities = Object.freeze({
   lifecycle: lifecycle("unavailable", "unavailable", "unavailable", "unavailable", "observational"),
+  influence: influence({}),
   contextInjection: "static-only",
   blocking: "unavailable",
   install: install({ skill: "native", prompt: "static-only", context: "static-only" }),
@@ -321,6 +413,7 @@ export const codexCapabilities: HostCapabilities = Object.freeze({
 
 export const openCodeCapabilities: HostCapabilities = Object.freeze({
   lifecycle: lifecycle("native", "native", "native", "native", "approximated"),
+  influence: influence({}, { decision: "native", contextInjection: "native" }),
   contextInjection: "native",
   blocking: "native",
   install: install({ skill: "native", agent: "native", hook: "native", prompt: "native", command: "native", context: "native" }),
@@ -368,6 +461,7 @@ export function bindAdapterLifecycle(options: LifecycleBindingOptions): () => vo
 
 export const strandsCapabilities: HostCapabilities = Object.freeze({
   lifecycle: lifecycle("native", "native", "native", "native", "native"),
+  influence: influence({}, { decision: "native", contextInjection: "native" }),
   contextInjection: "native",
   blocking: "native",
   install: install({ hook: "native", prompt: "native", context: "native", skill: "approximated", agent: "approximated", command: "approximated" }),
@@ -375,6 +469,7 @@ export const strandsCapabilities: HostCapabilities = Object.freeze({
 
 export const voltAgentCapabilities: HostCapabilities = Object.freeze({
   lifecycle: lifecycle("native", "native", "native", "native", "native"),
+  influence: influence({}, { decision: "native", contextInjection: "native" }),
   contextInjection: "native",
   blocking: "native",
   install: install({ hook: "native", prompt: "native", context: "native", skill: "approximated", agent: "native", command: "approximated" }),
@@ -392,16 +487,21 @@ export function renderConformanceMatrix(report: ConformanceReport): string {
   const phases: readonly LifecyclePhase[] = ["session-start", "before-model", "before-tool", "after-tool", "stop"];
   const rows = report.adapters.map(({ evidenceScope, adapterId, adapterVersion, hostId, hostVersion, capabilities, limitations, results }) => {
     const status = results.every(result => result.status === "pass") ? "pass" : "fail";
-    const cells = phases.map(phase => capabilities.lifecycle[phase]);
-    return `| ${adapterId} | ${adapterVersion} | ${evidenceScope} | ${hostId} | ${hostVersion} | ${cells.join(" | ")} | ${capabilities.contextInjection} | ${capabilities.blocking} | ${status} | ${limitations.join("; ") || "none"} |`;
+    const cells = phases.map(phase => {
+      const value = capabilities.influence[phase];
+      return `${capabilities.lifecycle[phase]} / ${value.decision} / ${value.contextInjection}`;
+    });
+    return `| ${adapterId} | ${adapterVersion} | ${evidenceScope} | ${hostId} | ${hostVersion} | ${cells.join(" | ")} | ${status} | ${limitations.join("; ") || "none"} |`;
   });
   return [
     "# Host conformance matrix",
     "",
     "Generated from `conformance/host-conformance.json`. Do not edit by hand. `adapter-contract` rows prove Conduit's projection contract only; runtime selection requires `host-bound` evidence generated by the consuming host.",
     "",
-    "| Adapter | Adapter version | Evidence scope | Host | Host version | Session start | Before model | Before tool | After tool | Stop | Context | Blocking | Probe | Limitations |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "Each lifecycle cell is `event / decision / context` fidelity.",
+    "",
+    "| Adapter | Adapter version | Evidence scope | Host | Host version | Session start | Before model | Before tool | After tool | Stop | Probe | Limitations |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ...rows,
     "",
   ].join("\n");

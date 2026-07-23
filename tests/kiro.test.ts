@@ -33,6 +33,10 @@ describe("Kiro CLI host profile", () => {
     );
     assert.equal(kiroCapabilities.install.command, "unavailable");
     assert.equal(kiroCapabilities.install.context, "static-only");
+    assert.equal(kiroCapabilities.influence?.["before-tool"].decision, "native");
+    assert.equal(kiroCapabilities.influence?.stop.decision, "native");
+    assert.equal(kiroCapabilities.influence?.["session-start"].contextInjection, "native");
+    assert.equal(kiroCapabilities.influence?.["after-tool"].contextInjection, "unavailable");
   });
 
   it("maps the documented CLI hook protocol without losing context or reasons", async () => {

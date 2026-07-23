@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "adapters"],
   "properties": {
-    "schemaVersion": { "const": "1" },
+    "schemaVersion": { "const": "2" },
     "adapters": {
       "type": "array",
       "items": { "$ref": "#/$defs/adapter" }
@@ -41,6 +41,27 @@
         "context": { "$ref": "#/$defs/fidelity" }
       }
     },
+    "influence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session-start", "before-model", "before-tool", "after-tool", "stop"],
+      "properties": {
+        "session-start": { "$ref": "#/$defs/phaseInfluence" },
+        "before-model": { "$ref": "#/$defs/phaseInfluence" },
+        "before-tool": { "$ref": "#/$defs/phaseInfluence" },
+        "after-tool": { "$ref": "#/$defs/phaseInfluence" },
+        "stop": { "$ref": "#/$defs/phaseInfluence" }
+      }
+    },
+    "phaseInfluence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "contextInjection"],
+      "properties": {
+        "decision": { "$ref": "#/$defs/fidelity" },
+        "contextInjection": { "$ref": "#/$defs/fidelity" }
+      }
+    },
     "result": {
       "type": "object",
       "additionalProperties": false,
@@ -64,11 +85,10 @@
         "capabilities": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["lifecycle", "contextInjection", "blocking", "install"],
+          "required": ["lifecycle", "influence", "install"],
           "properties": {
             "lifecycle": { "$ref": "#/$defs/lifecycle" },
-            "contextInjection": { "$ref": "#/$defs/fidelity" },
-            "blocking": { "$ref": "#/$defs/fidelity" },
+            "influence": { "$ref": "#/$defs/influence" },
             "install": { "$ref": "#/$defs/install" }
           }
         },

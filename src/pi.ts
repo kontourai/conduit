@@ -21,6 +21,13 @@ const lifecycle = Object.freeze({
  */
 export const piCapabilities: HostCapabilities = Object.freeze({
   lifecycle,
+  influence: Object.freeze({
+    "session-start": Object.freeze({ decision: "unavailable", contextInjection: "unavailable" }),
+    "before-model": Object.freeze({ decision: "unavailable", contextInjection: "native" }),
+    "before-tool": Object.freeze({ decision: "native", contextInjection: "unavailable" }),
+    "after-tool": Object.freeze({ decision: "unavailable", contextInjection: "unavailable" }),
+    stop: Object.freeze({ decision: "unavailable", contextInjection: "unavailable" }),
+  }),
   contextInjection: "native",
   blocking: "native",
   install: Object.freeze({
