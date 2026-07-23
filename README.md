@@ -16,8 +16,8 @@ Two adapter shapes ship initially:
   lifecycle and asset-registration surfaces.
 
 `probeHostConformance()` produces executable capability evidence. Installation
-receipts contain asset identities, kinds, targets, and SHA-256 digests, never
-asset contents or credentials.
+receipts contain asset identities, kinds, and SHA-256 digests, never asset
+contents, host-resolved targets, or credentials.
 
 ## Shipped host profiles
 
@@ -48,6 +48,11 @@ Capability values distinguish `native`, `approximated`, `observational`,
 `static-only`, and `unavailable`. The Codex profile does not claim synchronous
 tool blocking. Strands and VoltAgent remain caller-bound because Conduit does
 not depend on their runtime packages.
+
+Reference rows are explicitly `adapter-contract` evidence: they prove the
+projection and redaction contract, not a live host. A consumer records
+`host-bound` evidence with its actual host identity, version, and real bindings
+before using the matrix for runtime selection.
 
 ## Executable support evidence
 

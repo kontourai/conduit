@@ -5,7 +5,7 @@ import {
   createConformanceReport, createInProcessHostAdapter, createManifestHarnessAdapter,
   createOpenCodeAdapter, createStrandsAdapter, createVoltAgentAdapter, openCodeCapabilities,
   probeHostConformance, renderConformanceMatrix, serializeConformanceReport,
-  strandsCapabilities, voltAgentCapabilities, type HostCapabilities,
+  strandsCapabilities, voltAgentCapabilities, type EvidenceInput, type HostCapabilities,
 } from "../src/index.js";
 
 const all = <T>(value: T) => ({ skill: value, agent: value, hook: value, prompt: value, command: value, context: value });
@@ -18,6 +18,17 @@ describe("Conduit host conformance", () => {
     const adapter = createManifestHarnessAdapter({ id: "fixture-harness", capabilities: native, resolveTarget: a => `/fixture/${a.kind}/${a.id}`, write: (p, c) => { writes.set(p, c); } });
     assert.ok((await probeHostConformance(adapter)).every(result => result.status === "pass"));
     assert.equal(writes.get("/fixture/context/conformance-context"), "conduit-private-context-content");
+  });
+  it("never exposes caller-resolved targets in installation receipts", async () => {
+    const adapter = createManifestHarnessAdapter({ id: "private-target", capabilities: native, resolveTarget: () => "/private/home/alice/token-secret/skill", write: () => {} });
+    const receipt = await adapter.install([{ id: "safe-id", kind: "skill", content: "secret-content" }]);
+    const serialized = JSON.stringify(receipt);
+    assert.doesNotMatch(serialized, /\/private\/home\/alice|token-secret|secret-content/);
+  });
+  it("applies unavailable lifecycle fidelity before context projection", async () => {
+    const unavailable: HostCapabilities = { lifecycle: lifecycle("unavailable"), contextInjection: "unavailable", blocking: "unavailable", install: all("unavailable") };
+    const adapter = createManifestHarnessAdapter({ id: "unavailable", capabilities: unavailable, resolveTarget: () => undefined, write: () => {} });
+    assert.deepEqual(await adapter.project({ phase: "before-model", sessionId: "s" }, { decision: "allow", modelContext: "private" }), { decision: "observe", reason: "lifecycle phase unavailable" });
   });
   it("proves an in-process framework and records unsupported blocking honestly", async () => {
     const capabilities: HostCapabilities = { ...native, blocking: "unavailable" };
@@ -40,9 +51,9 @@ describe("Conduit host conformance", () => {
   it("emits deterministic, sorted JSON and Markdown evidence", async () => {
     const binding = { resolveTarget: () => "/fixture/context", write: () => {} };
     const inputs = [
-      { adapter: createOpenCodeAdapter(binding), adapterVersion: "1", hostVersion: "2", limitations: ["z", "a"] },
-      { adapter: createCodexAdapter(binding), adapterVersion: "1", hostVersion: "2" },
-    ];
+      { adapter: createOpenCodeAdapter(binding), evidenceScope: "host-bound", adapterVersion: "1", hostId: "fixture-open", hostVersion: "2", limitations: ["z", "a"] },
+      { adapter: createCodexAdapter(binding), evidenceScope: "adapter-contract", adapterVersion: "1", hostId: "unbound", hostVersion: "unbound" },
+    ] satisfies EvidenceInput[];
     const first = await createConformanceReport(inputs);
     const second = await createConformanceReport([...inputs].reverse());
     assert.equal(serializeConformanceReport(first), serializeConformanceReport(second));
@@ -56,7 +67,7 @@ describe("Conduit host conformance", () => {
       blocking: "native", contextInjection: "native",
       lifecycle: { stop: "native", "after-tool": "native", "before-tool": "native", "before-model": "native", "session-start": "native" },
     };
-    const reordered = await createConformanceReport([{ adapter: createManifestHarnessAdapter({ id: "fixture", capabilities: reorderedCapabilities, ...binding }), adapterVersion: "1", hostVersion: "1" }]);
+    const reordered = await createConformanceReport([{ adapter: createManifestHarnessAdapter({ id: "fixture", capabilities: reorderedCapabilities, ...binding }), evidenceScope: "host-bound", adapterVersion: "1", hostId: "fixture", hostVersion: "1" }]);
     assert.deepEqual(Object.keys(reordered.adapters[0]?.capabilities.lifecycle ?? {}), ["session-start", "before-model", "before-tool", "after-tool", "stop"]);
   });
   it("binds the same evaluator to caller-owned framework registrars", async () => {
