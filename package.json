@@ -1,6 +1,6 @@
 {
   "name": "@kontourai/conduit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Portable agent-host integration contracts, lifecycle adapters, asset installation, and conformance evidence",
   "type": "module",
   "license": "Apache-2.0",
@@ -21,7 +21,9 @@
     "CONTEXT.md",
     "LICENSE"
   ],
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "rm -rf dist && tsc",
     "typecheck": "tsc --noEmit",
