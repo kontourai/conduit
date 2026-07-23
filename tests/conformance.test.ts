@@ -4,9 +4,10 @@ import {
   bindAdapterLifecycle, claudeCodeCapabilities, codexCapabilities, createClaudeCodeAdapter, createCodexAdapter,
   createConformanceReport, createInProcessHostAdapter, createManifestHarnessAdapter,
   deriveConformanceLimitations,
+  normalizeCapabilities, parseConformanceReport,
   createOpenCodeAdapter, createStrandsAdapter, createVoltAgentAdapter, openCodeCapabilities,
   probeHostConformance, renderConformanceMatrix, serializeConformanceReport,
-  strandsCapabilities, voltAgentCapabilities, type EvidenceInput, type HostCapabilities,
+  strandsCapabilities, UnsupportedConformanceSchemaVersionError, voltAgentCapabilities, type EvidenceInput, type HostCapabilities,
 } from "../src/index.js";
 
 const all = <T>(value: T) => ({ skill: value, agent: value, hook: value, prompt: value, command: value, context: value });
@@ -58,6 +59,10 @@ describe("Conduit host conformance", () => {
     const first = await createConformanceReport(inputs);
     const second = await createConformanceReport([...inputs].reverse());
     assert.equal(serializeConformanceReport(first), serializeConformanceReport(second));
+    assert.doesNotMatch(
+      serializeConformanceReport(first),
+      /"blocking"|"contextInjection": "static-only",\n\s+"blocking"/,
+    );
     assert.deepEqual(first.adapters.map(adapter => adapter.adapterId), ["codex", "opencode"]);
     assert.deepEqual(first.adapters[1]?.limitations, [
       "a",
@@ -100,8 +105,16 @@ describe("Conduit host conformance", () => {
       { check: "a-check", status: "pass" },
       { check: "z-check", status: "fail" },
     ]), [
-      "capability.blocking=unavailable",
-      "capability.contextInjection=static-only",
+      "capability.influence.after-tool.contextInjection=static-only",
+      "capability.influence.after-tool.decision=unavailable",
+      "capability.influence.before-model.contextInjection=static-only",
+      "capability.influence.before-model.decision=unavailable",
+      "capability.influence.before-tool.contextInjection=static-only",
+      "capability.influence.before-tool.decision=unavailable",
+      "capability.influence.session-start.contextInjection=static-only",
+      "capability.influence.session-start.decision=unavailable",
+      "capability.influence.stop.contextInjection=static-only",
+      "capability.influence.stop.decision=unavailable",
       "capability.install.agent=approximated",
       "capability.install.command=unavailable",
       "capability.install.hook=observational",
@@ -112,6 +125,25 @@ describe("Conduit host conformance", () => {
       "capability.lifecycle.stop=unavailable",
       "probe.z-check=fail",
     ]);
+  });
+  it("migrates legacy aggregate influence explicitly and rejects old report versions", () => {
+    const normalized = normalizeCapabilities(native);
+    for (const phase of Object.keys(normalized.lifecycle) as (keyof typeof normalized.lifecycle)[]) {
+      assert.deepEqual(normalized.influence[phase], {
+        decision: "native",
+        contextInjection: "native",
+      });
+    }
+    assert.throws(
+      () => parseConformanceReport('{"schemaVersion":"1","adapters":[]}'),
+      (error: unknown) =>
+        error instanceof UnsupportedConformanceSchemaVersionError &&
+        error.schemaVersion === "1",
+    );
+    assert.equal(
+      parseConformanceReport('{"schemaVersion":"2","adapters":[]}').schemaVersion,
+      "2",
+    );
   });
   it("merges derived limitations with host prose once for JSON and Markdown", async () => {
     const unavailable: HostCapabilities = {
@@ -134,22 +166,22 @@ describe("Conduit host conformance", () => {
       hostVersion: "unbound",
       limitations: [
         "host-specific explanation",
-        "capability.blocking=unavailable",
+        "capability.influence.before-tool.decision=unavailable",
       ],
     }]);
     const limitations = report.adapters[0]?.limitations ?? [];
     assert.equal(
-      limitations.filter(value => value === "capability.blocking=unavailable").length,
+      limitations.filter(value => value === "capability.influence.before-tool.decision=unavailable").length,
       1,
     );
     assert.ok(limitations.includes("host-specific explanation"));
     assert.match(
       renderConformanceMatrix(report),
-      /capability\.blocking=unavailable.*host-specific explanation/,
+      /capability\.influence\.before-tool\.decision=unavailable.*host-specific explanation/,
     );
     assert.match(
       serializeConformanceReport(report),
-      /"capability\.blocking=unavailable"/,
+      /"capability\.influence\.before-tool\.decision=unavailable"/,
     );
   });
   it("projects failed executable probes into report limitations", async () => {
@@ -167,8 +199,16 @@ describe("Conduit host conformance", () => {
       hostVersion: "unbound",
     }]);
     assert.deepEqual(report.adapters[0]?.limitations, [
-      "probe.context-fidelity=fail",
-      "probe.deny-fidelity=fail",
+      "probe.context-after-tool=fail",
+      "probe.context-before-model=fail",
+      "probe.context-before-tool=fail",
+      "probe.context-session-start=fail",
+      "probe.context-stop=fail",
+      "probe.decision-after-tool=fail",
+      "probe.decision-before-model=fail",
+      "probe.decision-before-tool=fail",
+      "probe.decision-session-start=fail",
+      "probe.decision-stop=fail",
       "probe.lifecycle-after-tool=fail",
       "probe.lifecycle-before-model=fail",
       "probe.lifecycle-before-tool=fail",
