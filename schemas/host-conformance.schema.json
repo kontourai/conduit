@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kontourai.com/schemas/conduit/host-conformance.schema.json",
+  "title": "Conduit host conformance report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "adapters"],
+  "properties": {
+    "schemaVersion": { "const": "1" },
+    "adapters": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/adapter" }
+    }
+  },
+  "$defs": {
+    "fidelity": {
+      "enum": ["native", "approximated", "observational", "static-only", "unavailable"]
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session-start", "before-model", "before-tool", "after-tool", "stop"],
+      "properties": {
+        "session-start": { "$ref": "#/$defs/fidelity" },
+        "before-model": { "$ref": "#/$defs/fidelity" },
+        "before-tool": { "$ref": "#/$defs/fidelity" },
+        "after-tool": { "$ref": "#/$defs/fidelity" },
+        "stop": { "$ref": "#/$defs/fidelity" }
+      }
+    },
+    "install": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skill", "agent", "hook", "prompt", "command", "context"],
+      "properties": {
+        "skill": { "$ref": "#/$defs/fidelity" },
+        "agent": { "$ref": "#/$defs/fidelity" },
+        "hook": { "$ref": "#/$defs/fidelity" },
+        "prompt": { "$ref": "#/$defs/fidelity" },
+        "command": { "$ref": "#/$defs/fidelity" },
+        "context": { "$ref": "#/$defs/fidelity" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check", "status"],
+      "properties": {
+        "check": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["pass", "fail"] },
+        "detail": { "type": "string" }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapterId", "adapterVersion", "hostId", "hostVersion", "capabilities", "limitations", "results"],
+      "properties": {
+        "adapterId": { "type": "string", "minLength": 1 },
+        "adapterVersion": { "type": "string", "minLength": 1 },
+        "hostId": { "type": "string", "minLength": 1 },
+        "hostVersion": { "type": "string", "minLength": 1 },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["lifecycle", "contextInjection", "blocking", "install"],
+          "properties": {
+            "lifecycle": { "$ref": "#/$defs/lifecycle" },
+            "contextInjection": { "$ref": "#/$defs/fidelity" },
+            "blocking": { "$ref": "#/$defs/fidelity" },
+            "install": { "$ref": "#/$defs/install" }
+          }
+        },
+        "limitations": { "type": "array", "items": { "type": "string" } },
+        "results": { "type": "array", "items": { "$ref": "#/$defs/result" } }
+      }
+    }
+  }
+}
