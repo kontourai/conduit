@@ -2,10 +2,11 @@
   "schemaVersion": "1",
   "adapters": [
     {
+      "evidenceScope": "adapter-contract",
       "adapterId": "claude-code",
-      "adapterVersion": "0.2.0",
-      "hostId": "claude-code",
-      "hostVersion": "public-hooks",
+      "adapterVersion": "0.2.1",
+      "hostId": "unbound",
+      "hostVersion": "unbound",
       "capabilities": {
         "lifecycle": {
           "session-start": "native",
@@ -27,7 +28,8 @@
       },
       "limitations": [
         "before-model is projected through prompt submission hooks",
-        "context assets are static instructions"
+        "context assets are static instructions",
+        "host extension surfaces are not exercised by this reference row"
       ],
       "results": [
         {
@@ -73,10 +75,11 @@
       ]
     },
     {
+      "evidenceScope": "adapter-contract",
       "adapterId": "codex",
-      "adapterVersion": "0.2.0",
-      "hostId": "codex",
-      "hostVersion": "public-config",
+      "adapterVersion": "0.2.1",
+      "hostId": "unbound",
+      "hostVersion": "unbound",
       "capabilities": {
         "lifecycle": {
           "session-start": "unavailable",
@@ -97,6 +100,7 @@
         }
       },
       "limitations": [
+        "host extension surfaces are not exercised by this reference row",
         "lifecycle observation requires host-owned notification binding",
         "no public synchronous tool-blocking hook"
       ],
@@ -144,10 +148,11 @@
       ]
     },
     {
+      "evidenceScope": "adapter-contract",
       "adapterId": "opencode",
-      "adapterVersion": "0.2.0",
-      "hostId": "opencode",
-      "hostVersion": "public-plugin-api",
+      "adapterVersion": "0.2.1",
+      "hostId": "unbound",
+      "hostVersion": "unbound",
       "capabilities": {
         "lifecycle": {
           "session-start": "native",
@@ -168,6 +173,7 @@
         }
       },
       "limitations": [
+        "host extension surfaces are not exercised by this reference row",
         "stop is derived from session lifecycle events"
       ],
       "results": [
@@ -214,10 +220,11 @@
       ]
     },
     {
+      "evidenceScope": "adapter-contract",
       "adapterId": "strands",
-      "adapterVersion": "0.2.0",
-      "hostId": "strands",
-      "hostVersion": "caller-bound",
+      "adapterVersion": "0.2.1",
+      "hostId": "unbound",
+      "hostVersion": "unbound",
       "capabilities": {
         "lifecycle": {
           "session-start": "native",
@@ -238,7 +245,8 @@
         }
       },
       "limitations": [
-        "framework objects and hook registration are supplied by the caller"
+        "framework objects and hook registration are supplied by the caller",
+        "host extension surfaces are not exercised by this reference row"
       ],
       "results": [
         {
@@ -284,10 +292,11 @@
       ]
     },
     {
+      "evidenceScope": "adapter-contract",
       "adapterId": "voltagent",
-      "adapterVersion": "0.2.0",
-      "hostId": "voltagent",
-      "hostVersion": "caller-bound",
+      "adapterVersion": "0.2.1",
+      "hostId": "unbound",
+      "hostVersion": "unbound",
       "capabilities": {
         "lifecycle": {
           "session-start": "native",
@@ -308,7 +317,8 @@
         }
       },
       "limitations": [
-        "framework objects and hook registration are supplied by the caller"
+        "framework objects and hook registration are supplied by the caller",
+        "host extension surfaces are not exercised by this reference row"
       ],
       "results": [
         {

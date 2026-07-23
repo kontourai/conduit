@@ -20,11 +20,11 @@ const applyOutcome = (_event, outcome) => outcome;
 const installAsset = () => {};
 
 const inputs = [
-  { adapter: createClaudeCodeAdapter({ resolveTarget: target, write }), adapterVersion, hostVersion: "public-hooks", limitations: ["before-model is projected through prompt submission hooks", "context assets are static instructions"] },
-  { adapter: createCodexAdapter({ resolveTarget: target, write }), adapterVersion, hostVersion: "public-config", limitations: ["no public synchronous tool-blocking hook", "lifecycle observation requires host-owned notification binding"] },
-  { adapter: createOpenCodeAdapter({ resolveTarget: target, write }), adapterVersion, hostVersion: "public-plugin-api", limitations: ["stop is derived from session lifecycle events"] },
-  { adapter: createStrandsAdapter({ applyOutcome, installAsset }), adapterVersion, hostVersion: "caller-bound", limitations: ["framework objects and hook registration are supplied by the caller"] },
-  { adapter: createVoltAgentAdapter({ applyOutcome, installAsset }), adapterVersion, hostVersion: "caller-bound", limitations: ["framework objects and hook registration are supplied by the caller"] },
+  { adapter: createClaudeCodeAdapter({ resolveTarget: target, write }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["host extension surfaces are not exercised by this reference row", "before-model is projected through prompt submission hooks", "context assets are static instructions"] },
+  { adapter: createCodexAdapter({ resolveTarget: target, write }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["host extension surfaces are not exercised by this reference row", "no public synchronous tool-blocking hook", "lifecycle observation requires host-owned notification binding"] },
+  { adapter: createOpenCodeAdapter({ resolveTarget: target, write }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["host extension surfaces are not exercised by this reference row", "stop is derived from session lifecycle events"] },
+  { adapter: createStrandsAdapter({ applyOutcome, installAsset }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["framework objects and hook registration are supplied by the caller", "host extension surfaces are not exercised by this reference row"] },
+  { adapter: createVoltAgentAdapter({ applyOutcome, installAsset }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["framework objects and hook registration are supplied by the caller", "host extension surfaces are not exercised by this reference row"] },
 ];
 
 const report = await createConformanceReport(inputs);

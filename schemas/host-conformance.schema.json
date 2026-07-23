@@ -54,8 +54,9 @@
     "adapter": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["adapterId", "adapterVersion", "hostId", "hostVersion", "capabilities", "limitations", "results"],
+      "required": ["evidenceScope", "adapterId", "adapterVersion", "hostId", "hostVersion", "capabilities", "limitations", "results"],
       "properties": {
+        "evidenceScope": { "enum": ["adapter-contract", "host-bound"] },
         "adapterId": { "type": "string", "minLength": 1 },
         "adapterVersion": { "type": "string", "minLength": 1 },
         "hostId": { "type": "string", "minLength": 1 },
