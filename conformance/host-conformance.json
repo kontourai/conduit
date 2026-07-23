@@ -1,0 +1,357 @@
+{
+  "schemaVersion": "1",
+  "adapters": [
+    {
+      "adapterId": "claude-code",
+      "adapterVersion": "0.1.0",
+      "hostId": "claude-code",
+      "hostVersion": "public-hooks",
+      "capabilities": {
+        "lifecycle": {
+          "session-start": "native",
+          "before-model": "approximated",
+          "before-tool": "native",
+          "after-tool": "native",
+          "stop": "native"
+        },
+        "contextInjection": "native",
+        "blocking": "native",
+        "install": {
+          "skill": "native",
+          "agent": "native",
+          "hook": "native",
+          "prompt": "native",
+          "command": "native",
+          "context": "static-only"
+        }
+      },
+      "limitations": [
+        "before-model is projected through prompt submission hooks",
+        "context assets are static instructions"
+      ],
+      "results": [
+        {
+          "check": "capability-completeness",
+          "status": "pass"
+        },
+        {
+          "check": "context-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "deny-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "install-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-stop",
+          "status": "pass"
+        },
+        {
+          "check": "secret-free-install-receipt",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "adapterId": "codex",
+      "adapterVersion": "0.1.0",
+      "hostId": "codex",
+      "hostVersion": "public-config",
+      "capabilities": {
+        "lifecycle": {
+          "session-start": "unavailable",
+          "before-model": "unavailable",
+          "before-tool": "unavailable",
+          "after-tool": "unavailable",
+          "stop": "observational"
+        },
+        "contextInjection": "static-only",
+        "blocking": "unavailable",
+        "install": {
+          "skill": "native",
+          "agent": "unavailable",
+          "hook": "unavailable",
+          "prompt": "static-only",
+          "command": "unavailable",
+          "context": "static-only"
+        }
+      },
+      "limitations": [
+        "lifecycle observation requires host-owned notification binding",
+        "no public synchronous tool-blocking hook"
+      ],
+      "results": [
+        {
+          "check": "capability-completeness",
+          "status": "pass"
+        },
+        {
+          "check": "context-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "deny-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "install-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-stop",
+          "status": "pass"
+        },
+        {
+          "check": "secret-free-install-receipt",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "adapterId": "opencode",
+      "adapterVersion": "0.1.0",
+      "hostId": "opencode",
+      "hostVersion": "public-plugin-api",
+      "capabilities": {
+        "lifecycle": {
+          "session-start": "native",
+          "before-model": "native",
+          "before-tool": "native",
+          "after-tool": "native",
+          "stop": "approximated"
+        },
+        "contextInjection": "native",
+        "blocking": "native",
+        "install": {
+          "skill": "native",
+          "agent": "native",
+          "hook": "native",
+          "prompt": "native",
+          "command": "native",
+          "context": "native"
+        }
+      },
+      "limitations": [
+        "stop is derived from session lifecycle events"
+      ],
+      "results": [
+        {
+          "check": "capability-completeness",
+          "status": "pass"
+        },
+        {
+          "check": "context-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "deny-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "install-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-stop",
+          "status": "pass"
+        },
+        {
+          "check": "secret-free-install-receipt",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "adapterId": "strands",
+      "adapterVersion": "0.1.0",
+      "hostId": "strands",
+      "hostVersion": "caller-bound",
+      "capabilities": {
+        "lifecycle": {
+          "session-start": "native",
+          "before-model": "native",
+          "before-tool": "native",
+          "after-tool": "native",
+          "stop": "native"
+        },
+        "contextInjection": "native",
+        "blocking": "native",
+        "install": {
+          "skill": "approximated",
+          "agent": "approximated",
+          "hook": "native",
+          "prompt": "native",
+          "command": "approximated",
+          "context": "native"
+        }
+      },
+      "limitations": [
+        "framework objects and hook registration are supplied by the caller"
+      ],
+      "results": [
+        {
+          "check": "capability-completeness",
+          "status": "pass"
+        },
+        {
+          "check": "context-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "deny-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "install-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-stop",
+          "status": "pass"
+        },
+        {
+          "check": "secret-free-install-receipt",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "adapterId": "voltagent",
+      "adapterVersion": "0.1.0",
+      "hostId": "voltagent",
+      "hostVersion": "caller-bound",
+      "capabilities": {
+        "lifecycle": {
+          "session-start": "native",
+          "before-model": "native",
+          "before-tool": "native",
+          "after-tool": "native",
+          "stop": "native"
+        },
+        "contextInjection": "native",
+        "blocking": "native",
+        "install": {
+          "skill": "approximated",
+          "agent": "native",
+          "hook": "native",
+          "prompt": "native",
+          "command": "approximated",
+          "context": "native"
+        }
+      },
+      "limitations": [
+        "framework objects and hook registration are supplied by the caller"
+      ],
+      "results": [
+        {
+          "check": "capability-completeness",
+          "status": "pass"
+        },
+        {
+          "check": "context-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "deny-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "install-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-stop",
+          "status": "pass"
+        },
+        {
+          "check": "secret-free-install-receipt",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}
