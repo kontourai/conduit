@@ -11,6 +11,7 @@ import {
   serializeConformanceReport,
 } from "../dist/src/index.js";
 import { createPiAdapter } from "../dist/src/pi.js";
+import { createKiroAdapter } from "../dist/src/kiro.js";
 
 const check = process.argv.includes("--check");
 const packageManifest = JSON.parse(await readFile(resolve("package.json"), "utf8"));
@@ -27,6 +28,7 @@ const inputs = [
   { adapter: createStrandsAdapter({ applyOutcome, installAsset }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["framework objects and hook registration are supplied by the caller", "host extension surfaces are not exercised by this reference row"] },
   { adapter: createVoltAgentAdapter({ applyOutcome, installAsset }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["framework objects and hook registration are supplied by the caller", "host extension surfaces are not exercised by this reference row"] },
   { adapter: createPiAdapter({ resolveTarget: target, write }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["Pi 0.80.6+ extension registration is supplied by the caller", "agent assets have no native Pi resource kind", "commands require extension registration", "context files are static instructions", "host extension surfaces are not exercised by this reference row"] },
+  { adapter: createKiroAdapter({ resolveTarget: target, write }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["Kiro CLI 2.13+ hook registration is supplied by the caller", "blocking applies to pre-tool and stop hooks", "command assets have no native Kiro CLI resource kind", "context files are startup resources", "host hook processes are not exercised by this reference row"] },
 ];
 
 const report = await createConformanceReport(inputs);

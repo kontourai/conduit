@@ -31,6 +31,8 @@ Conduit includes `createClaudeCodeAdapter`, `createCodexAdapter`, and
 `createOpenCodeAdapter` for local harnesses, plus `createStrandsAdapter` and
 `createVoltAgentAdapter` for in-process frameworks. The optional
 `@kontourai/conduit/pi` entrypoint adds Pi 0.80.6+ extension lifecycle binding.
+The optional `@kontourai/conduit/kiro` entrypoint maps Kiro CLI 2.13+ custom
+agent hooks without making Kiro a package dependency.
 Local adapters require
 explicit `resolveTarget` and `write` bindings. Framework adapters require an
 explicit `applyOutcome` bridge and optionally accept `installAsset`.
@@ -92,6 +94,37 @@ export default function conduitExtension(pi) {
   pi.on("agent_settled", handlers.agentSettled);
 }
 ```
+
+Kiro CLI consumers decode the hook event received on stdin, evaluate it through
+`evaluateKiroHook()`, and write the returned streams and exit code unchanged.
+The bridge maps `agentSpawn`, `userPromptSubmit`, `preToolUse`, `postToolUse`,
+and `stop` to Conduit's lifecycle. The application remains responsible for
+policy evaluation and for registering its executable bridge in a Kiro custom
+agent configuration.
+
+```ts
+import {
+  createKiroAdapter,
+  evaluateKiroHook,
+} from "@kontourai/conduit/kiro";
+
+const result = await evaluateKiroHook({
+  adapter: createKiroAdapter({
+    resolveTarget: asset => configuredTargets[asset.kind]?.(asset.id),
+    write: (target, content) => hostConfigWriter(target, content),
+  }),
+  evaluate: event => applicationPolicy.evaluate(event),
+}, JSON.parse(await readStdin()));
+
+if (result.stdout) process.stdout.write(result.stdout);
+if (result.stderr) process.stderr.write(result.stderr);
+process.exitCode = result.exitCode;
+```
+
+Kiro CLI context files are startup resources, command assets have no native
+resource kind, and blocking is enforceable by the documented hook protocol at
+pre-tool and stop. The generated evidence records these limitations rather than
+generalizing from Kiro IDE hooks or another host.
 
 ## Executable support evidence
 
