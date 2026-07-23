@@ -11,6 +11,10 @@
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
     },
+    "./pi": {
+      "types": "./dist/src/pi.d.ts",
+      "import": "./dist/src/pi.js"
+    },
     "./conformance/host-conformance.json": "./conformance/host-conformance.json",
     "./schemas/host-conformance.schema.json": "./schemas/host-conformance.schema.json"
   },
