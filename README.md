@@ -29,7 +29,9 @@ Native capabilities and passing probes do not produce limitations.
 
 Conduit includes `createClaudeCodeAdapter`, `createCodexAdapter`, and
 `createOpenCodeAdapter` for local harnesses, plus `createStrandsAdapter` and
-`createVoltAgentAdapter` for in-process frameworks. Local adapters require
+`createVoltAgentAdapter` for in-process frameworks. The optional
+`@kontourai/conduit/pi` entrypoint adds Pi 0.80.6+ extension lifecycle binding.
+Local adapters require
 explicit `resolveTarget` and `write` bindings. Framework adapters require an
 explicit `applyOutcome` bridge and optionally accept `installAsset`.
 
@@ -59,6 +61,37 @@ Reference rows are explicitly `adapter-contract` evidence: they prove the
 projection and redaction contract, not a live host. A consumer records
 `host-bound` evidence with its actual host identity, version, and real bindings
 before using the matrix for runtime selection.
+
+Pi consumers register the dependency-free handlers returned by
+`createPiLifecycleHandlers()` with the public `session_start`,
+`before_agent_start`, `tool_call`, `tool_result`, and `agent_settled` extension
+events. The host supplies its stable session identity and application
+evaluator. Tool denials preserve the evaluator's reason, and model context is
+appended without rewriting its content. Installation remains caller-bound
+through `createPiAdapter()`.
+
+```ts
+import {
+  createPiAdapter,
+  createPiLifecycleHandlers,
+} from "@kontourai/conduit/pi";
+
+export default function conduitExtension(pi) {
+  const handlers = createPiLifecycleHandlers({
+    adapter: createPiAdapter({
+      resolveTarget: asset => configuredTargets[asset.kind]?.(asset.id),
+      write: (target, content) => hostConfigWriter(target, content),
+    }),
+    sessionId: (_phase, _event, context) => context.sessionManager.getSessionId(),
+    evaluate: event => applicationPolicy.evaluate(event),
+  });
+  pi.on("session_start", handlers.sessionStart);
+  pi.on("before_agent_start", handlers.beforeAgentStart);
+  pi.on("tool_call", handlers.toolCall);
+  pi.on("tool_result", handlers.toolResult);
+  pi.on("agent_settled", handlers.agentSettled);
+}
+```
 
 ## Executable support evidence
 

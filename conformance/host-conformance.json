@@ -236,6 +236,84 @@
     },
     {
       "evidenceScope": "adapter-contract",
+      "adapterId": "pi",
+      "adapterVersion": "0.3.0",
+      "hostId": "unbound",
+      "hostVersion": "unbound",
+      "capabilities": {
+        "lifecycle": {
+          "session-start": "native",
+          "before-model": "native",
+          "before-tool": "native",
+          "after-tool": "native",
+          "stop": "native"
+        },
+        "contextInjection": "native",
+        "blocking": "native",
+        "install": {
+          "skill": "native",
+          "agent": "unavailable",
+          "hook": "native",
+          "prompt": "native",
+          "command": "approximated",
+          "context": "static-only"
+        }
+      },
+      "limitations": [
+        "Pi 0.80.6+ extension registration is supplied by the caller",
+        "agent assets have no native Pi resource kind",
+        "capability.install.agent=unavailable",
+        "capability.install.command=approximated",
+        "capability.install.context=static-only",
+        "commands require extension registration",
+        "context files are static instructions",
+        "host extension surfaces are not exercised by this reference row"
+      ],
+      "results": [
+        {
+          "check": "capability-completeness",
+          "status": "pass"
+        },
+        {
+          "check": "context-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "deny-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "install-fidelity",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "lifecycle-stop",
+          "status": "pass"
+        },
+        {
+          "check": "secret-free-install-receipt",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "evidenceScope": "adapter-contract",
       "adapterId": "strands",
       "adapterVersion": "0.3.0",
       "hostId": "unbound",

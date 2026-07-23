@@ -10,6 +10,7 @@ import {
   renderConformanceMatrix,
   serializeConformanceReport,
 } from "../dist/src/index.js";
+import { createPiAdapter } from "../dist/src/pi.js";
 
 const check = process.argv.includes("--check");
 const packageManifest = JSON.parse(await readFile(resolve("package.json"), "utf8"));
@@ -25,6 +26,7 @@ const inputs = [
   { adapter: createOpenCodeAdapter({ resolveTarget: target, write }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["host extension surfaces are not exercised by this reference row", "stop is derived from session lifecycle events"] },
   { adapter: createStrandsAdapter({ applyOutcome, installAsset }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["framework objects and hook registration are supplied by the caller", "host extension surfaces are not exercised by this reference row"] },
   { adapter: createVoltAgentAdapter({ applyOutcome, installAsset }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["framework objects and hook registration are supplied by the caller", "host extension surfaces are not exercised by this reference row"] },
+  { adapter: createPiAdapter({ resolveTarget: target, write }), evidenceScope: "adapter-contract", adapterVersion, hostId: "unbound", hostVersion: "unbound", limitations: ["Pi 0.80.6+ extension registration is supplied by the caller", "agent assets have no native Pi resource kind", "commands require extension registration", "context files are static instructions", "host extension surfaces are not exercised by this reference row"] },
 ];
 
 const report = await createConformanceReport(inputs);
