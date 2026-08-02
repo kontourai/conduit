@@ -37,7 +37,7 @@
   "scripts": {
     "build": "rm -rf dist && tsc",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test dist/tests/*.test.js",
+    "test": "npm run build && node scripts/run-tests.mjs",
     "conformance:generate": "npm run build && node scripts/generate-conformance.mjs",
     "conformance:check": "npm run build && node scripts/generate-conformance.mjs --check",
     "verify": "npm run typecheck && npm test && npm run conformance:check && npm pack --dry-run",
