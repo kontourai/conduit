@@ -395,7 +395,7 @@ export const claudeCodeCapabilities: HostCapabilities = Object.freeze({
   influence: influence({
     "session-start": { contextInjection: "native" },
     "before-model": { contextInjection: "native" },
-    "before-tool": { decision: "native" },
+    "before-tool": { decision: "native", contextInjection: "native" },
     stop: { decision: "native" },
   }),
   contextInjection: "native",
