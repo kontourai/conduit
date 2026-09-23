@@ -404,11 +404,12 @@ export const claudeCodeCapabilities: HostCapabilities = Object.freeze({
 });
 
 export const codexCapabilities: HostCapabilities = Object.freeze({
-  lifecycle: lifecycle("unavailable", "unavailable", "unavailable", "unavailable", "observational"),
-  influence: influence({}),
+  lifecycle: lifecycle("unavailable", "unavailable", "native", "unavailable", "observational"),
+  influence: influence({ "before-tool": { decision: "native", contextInjection: "native" } }),
   contextInjection: "static-only",
   blocking: "unavailable",
-  install: install({ skill: "native", prompt: "static-only", context: "static-only" }),
+  // A copied project hook is not active until Codex trusts its exact definition.
+  install: install({ skill: "native", hook: "approximated", prompt: "static-only", context: "static-only" }),
 });
 
 export const openCodeCapabilities: HostCapabilities = Object.freeze({

@@ -46,9 +46,32 @@ describe("Conduit host conformance", () => {
     for (const adapter of adapters) assert.ok((await probeHostConformance(adapter)).every(result => result.status === "pass"), adapter.id);
     assert.equal(claudeCodeCapabilities.blocking, "native");
     assert.equal(codexCapabilities.blocking, "unavailable");
+    assert.equal(codexCapabilities.lifecycle["before-tool"], "native");
+    assert.deepEqual(normalizeCapabilities(codexCapabilities).influence["before-tool"], {
+      decision: "native",
+      contextInjection: "native",
+    });
+    assert.equal(codexCapabilities.install.hook, "approximated");
     assert.equal(openCodeCapabilities.lifecycle.stop, "approximated");
     assert.equal(strandsCapabilities.install.skill, "approximated");
     assert.equal(voltAgentCapabilities.install.agent, "native");
+  });
+  it("installs a caller-bound Codex hook and preserves pre-tool deny and guidance fidelity", async () => {
+    const writes = new Map<string, string>();
+    const adapter = createCodexAdapter({
+      resolveTarget: (asset) => asset.kind === "hook" ? "/fixture/.codex/hooks.json" : undefined,
+      write: (target, content) => { writes.set(target, content); },
+    });
+    const receipt = await adapter.install([{ id: "governance-hook", kind: "hook", content: "private hook config" }]);
+    assert.equal(writes.get("/fixture/.codex/hooks.json"), "private hook config");
+    assert.deepEqual(receipt.installed.map((item) => ({ id: item.id, kind: item.kind })), [
+      { id: "governance-hook", kind: "hook" },
+    ]);
+    assert.doesNotMatch(JSON.stringify(receipt), /private hook config|\.codex\/hooks\.json/);
+    assert.deepEqual(await adapter.project(
+      { phase: "before-tool", sessionId: "fixture" },
+      { decision: "deny", reason: "policy denied", modelContext: "review this rule" },
+    ), { decision: "deny", reason: "policy denied", modelContext: "review this rule" });
   });
   it("emits deterministic, sorted JSON and Markdown evidence", async () => {
     const binding = { resolveTarget: () => "/fixture/context", write: () => {} };
