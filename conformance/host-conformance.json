@@ -26,7 +26,7 @@
           },
           "before-tool": {
             "decision": "native",
-            "contextInjection": "unavailable"
+            "contextInjection": "native"
           },
           "after-tool": {
             "decision": "unavailable",
@@ -51,7 +51,6 @@
         "capability.influence.after-tool.contextInjection=unavailable",
         "capability.influence.after-tool.decision=unavailable",
         "capability.influence.before-model.decision=unavailable",
-        "capability.influence.before-tool.contextInjection=unavailable",
         "capability.influence.session-start.decision=unavailable",
         "capability.influence.stop.contextInjection=unavailable",
         "capability.install.context=static-only",

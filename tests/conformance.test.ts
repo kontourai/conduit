@@ -45,6 +45,10 @@ describe("Conduit host conformance", () => {
     const adapters = [createClaudeCodeAdapter({ resolveTarget, write }), createCodexAdapter({ resolveTarget, write }), createOpenCodeAdapter({ resolveTarget, write }), createStrandsAdapter({ applyOutcome, installAsset }), createVoltAgentAdapter({ applyOutcome, installAsset })];
     for (const adapter of adapters) assert.ok((await probeHostConformance(adapter)).every(result => result.status === "pass"), adapter.id);
     assert.equal(claudeCodeCapabilities.blocking, "native");
+    assert.deepEqual(normalizeCapabilities(claudeCodeCapabilities).influence["before-tool"], {
+      decision: "native",
+      contextInjection: "native",
+    });
     assert.equal(codexCapabilities.blocking, "unavailable");
     assert.equal(codexCapabilities.lifecycle["before-tool"], "native");
     assert.deepEqual(normalizeCapabilities(codexCapabilities).influence["before-tool"], {
