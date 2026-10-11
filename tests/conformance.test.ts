@@ -257,4 +257,18 @@ describe("Conduit host conformance", () => {
     dispose();
     assert.equal(disposed.length, 5);
   });
+  it("disposes lifecycle registrations once, in reverse order, however often dispose is called", () => {
+    const disposed: string[] = [];
+    const dispose = bindAdapterLifecycle({
+      adapter: createStrandsAdapter({ applyOutcome: (_event, outcome) => outcome }),
+      registrar: { register: phase => () => { disposed.push(phase); } },
+      evaluate: () => ({ decision: "allow" }),
+    });
+    const reversed = ["stop", "after-tool", "before-tool", "before-model", "session-start"];
+    dispose();
+    assert.deepEqual(disposed, reversed);
+    dispose();
+    dispose();
+    assert.deepEqual(disposed, reversed);
+  });
 });
