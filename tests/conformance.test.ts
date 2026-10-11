@@ -77,6 +77,16 @@ describe("Conduit host conformance", () => {
       { decision: "deny", reason: "policy denied", modelContext: "review this rule" },
     ), { decision: "deny", reason: "policy denied", modelContext: "review this rule" });
   });
+  it("drops modelContext from a downgraded Codex stop deny (#35)", async () => {
+    const adapter = createCodexAdapter({ resolveTarget: () => undefined, write: () => {} });
+    const projected = await adapter.project(
+      { phase: "stop", sessionId: "fixture" },
+      { decision: "deny", reason: "r", modelContext: "ctx" },
+    );
+    assert.equal(projected.decision, "observe");
+    assert.equal(projected.reason, "r");
+    assert.equal(projected.modelContext, undefined);
+  });
   it("emits deterministic, sorted JSON and Markdown evidence", async () => {
     const binding = { resolveTarget: () => "/fixture/context", write: () => {} };
     const inputs = [
@@ -234,6 +244,11 @@ describe("Conduit host conformance", () => {
       "probe.decision-after-tool=fail",
       "probe.decision-before-model=fail",
       "probe.decision-before-tool=fail",
+      "probe.decision-context-after-tool=fail",
+      "probe.decision-context-before-model=fail",
+      "probe.decision-context-before-tool=fail",
+      "probe.decision-context-session-start=fail",
+      "probe.decision-context-stop=fail",
       "probe.decision-session-start=fail",
       "probe.decision-stop=fail",
       "probe.lifecycle-after-tool=fail",

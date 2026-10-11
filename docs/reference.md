@@ -216,7 +216,7 @@ Kiro custom-agent configuration is the application's job.
 
 | Export | Purpose |
 | --- | --- |
-| `probeHostConformance(adapter)` | Run the executable probes and return `ConformanceResult[]` (`{ check, status: "pass" \| "fail", detail? }`) |
+| `probeHostConformance(adapter)` | Run the executable probes, including the per-phase `lifecycle-`, `decision-`, `context-`, and `decision-context-` checks listed in [Concepts](concepts.md#conformance-evidence), and return `ConformanceResult[]` (`{ check, status: "pass" \| "fail", detail? }`) |
 | `createConformanceReport(inputs)` | Probe each `EvidenceInput` and return a `ConformanceReport` sorted by adapter id |
 | `deriveConformanceLimitations(capabilities, results)` | Return the sorted `capability.*` and `probe.*` limitations |
 | `normalizeCapabilities(capabilities)` | Resolve legacy aggregate fields into explicit per-phase influence |

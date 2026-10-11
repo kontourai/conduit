@@ -85,4 +85,23 @@ describe("Pi host profile", () => {
       "stop",
     ]);
   });
+
+  it("drops modelContext from a downgraded deny where Pi cannot inject context (#35)", async () => {
+    const adapter = createPiAdapter({ resolveTarget: () => "/fixture", write: () => {} });
+    for (const phase of ["session-start", "after-tool", "stop"] as const) {
+      const projected = await adapter.project(
+        { phase, sessionId: "pi-session" },
+        { decision: "deny", reason: "r", modelContext: "ctx" },
+      );
+      assert.equal(projected.decision, "observe", phase);
+      assert.equal(projected.reason, "r", phase);
+      assert.equal(projected.modelContext, undefined, phase);
+    }
+    const unreasoned = await adapter.project(
+      { phase: "stop", sessionId: "pi-session" },
+      { decision: "deny", modelContext: "ctx" },
+    );
+    assert.equal(unreasoned.reason, "host cannot block");
+    assert.equal(unreasoned.modelContext, undefined);
+  });
 });
