@@ -42,7 +42,9 @@
     "conformance:generate": "npm run build && node scripts/generate-conformance.mjs",
     "conformance:check": "npm run build && node scripts/generate-conformance.mjs --check",
     "verify": "npm run typecheck && npm test && npm run conformance:check && npm pack --dry-run",
-    "veritas:readiness": "veritas readiness --working-tree"
+    "veritas:readiness": "veritas readiness --working-tree",
+    "docs:check": "npx -y github:kontourai/docs-kit#482fb2e691fe7686f79a9a4da8bc2247384b85c3 docs-kit check",
+    "docs:build": "npx -y github:kontourai/docs-kit#482fb2e691fe7686f79a9a4da8bc2247384b85c3 docs-kit build"
   },
   "devDependencies": {
     "@kontourai/veritas": "^1.5.2",

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "product": "conduit",
+  "title": "Conduit",
+  "tagline": "Portable agent-host contracts: lifecycle projection, asset installation, and executable conformance evidence",
+  "repo": "kontourai/conduit",
+  "landing": "README.md",
+  "documents": [
+    { "source": "docs/getting-started.md", "section": "Start Here" },
+    { "source": "docs/concepts.md", "section": "Concepts" },
+    { "source": "CONTEXT.md", "section": "Concepts" },
+    { "source": "docs/framework-bindings.md", "section": "Guides" },
+    { "source": "docs/reference.md", "section": "Reference", "covers": ["src/"] },
+    { "source": "docs/host-conformance.md", "section": "Reference" },
+    { "source": "AGENTS.md", "section": "Contribute" }
+  ],
+  "topics": [
+    { "id": "what-conduit-owns", "title": "What Conduit owns and how it fits other Kontour products", "source": "docs/concepts.md#what-conduit-owns" },
+    { "id": "hosts-and-adapters", "title": "Hosts, adapters, and the two adapter shapes", "source": "docs/concepts.md#hosts-and-adapters" },
+    { "id": "capability-fidelity", "title": "Capability fidelity values", "source": "docs/concepts.md#capability-fidelity" },
+    { "id": "lifecycle-influence", "title": "Lifecycle phases and per-phase decision and context influence", "source": "docs/concepts.md#lifecycle-phases-and-influence" },
+    { "id": "outcome-projection", "title": "How an adapter projects a lifecycle outcome", "source": "docs/concepts.md#outcome-projection" },
+    { "id": "asset-installation", "title": "Portable assets and installation receipts", "source": "docs/concepts.md#portable-assets-and-installation-receipts" },
+    { "id": "caller-bindings", "title": "Caller bindings Conduit requires", "source": "docs/concepts.md#caller-bindings" },
+    { "id": "conformance-evidence", "title": "Conformance probes, reports, and limitations", "source": "docs/concepts.md#conformance-evidence" },
+    { "id": "evidence-scope", "title": "adapter-contract versus host-bound evidence", "source": "docs/concepts.md#evidence-scope" },
+    { "id": "adapter-factories", "title": "Adapter factory API", "source": "docs/reference.md#adapter-factories" },
+    { "id": "host-profiles", "title": "Shipped host profiles and install fidelity", "source": "docs/reference.md#host-profiles" },
+    { "id": "lifecycle-binding", "title": "bindAdapterLifecycle for framework registrars", "source": "docs/reference.md#lifecycle-binding" },
+    { "id": "pi-extension", "title": "Pi extension lifecycle handlers", "source": "docs/reference.md#pi-entrypoint" },
+    { "id": "kiro-hooks", "title": "Kiro CLI hook evaluation", "source": "docs/reference.md#kiro-entrypoint" },
+    { "id": "conformance-api", "title": "Conformance report API", "source": "docs/reference.md#conformance-api" }
+  ]
+}
