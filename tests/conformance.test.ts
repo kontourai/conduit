@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   bindAdapterLifecycle, claudeCodeCapabilities, codexCapabilities, createClaudeCodeAdapter, createCodexAdapter,
@@ -76,6 +77,19 @@ describe("Conduit host conformance", () => {
       { phase: "before-tool", sessionId: "fixture" },
       { decision: "deny", reason: "policy denied", modelContext: "review this rule" },
     ), { decision: "deny", reason: "policy denied", modelContext: "review this rule" });
+  });
+  it("keeps committed limitation prose consistent with each row's declared tool blocking", () => {
+    // Compiled to dist/tests, so the published evidence sits two levels up.
+    const report = parseConformanceReport(readFileSync(new URL("../../conformance/host-conformance.json", import.meta.url), "utf8"));
+    const codex = report.adapters.find(row => row.adapterId === "codex");
+    assert.deepEqual(codex?.capabilities.influence["before-tool"], normalizeCapabilities(codexCapabilities).influence["before-tool"]);
+    const deniesBlocking = /no\b.*\btool[- ]blocking|cannot block|does not (claim|support) .*block/i;
+    for (const row of report.adapters) {
+      const decision = row.capabilities.influence["before-tool"].decision;
+      if (decision !== "native" && decision !== "approximated") continue;
+      const contradictions = row.limitations.filter(limitation => deniesBlocking.test(limitation));
+      assert.deepEqual(contradictions, [], `${row.adapterId} declares before-tool decision=${decision}`);
+    }
   });
   it("emits deterministic, sorted JSON and Markdown evidence", async () => {
     const binding = { resolveTarget: () => "/fixture/context", write: () => {} };

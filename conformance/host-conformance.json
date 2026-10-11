@@ -179,6 +179,7 @@
         }
       },
       "limitations": [
+        "before-tool influence requires a trusted Codex hook definition",
         "capability.influence.after-tool.contextInjection=unavailable",
         "capability.influence.after-tool.decision=unavailable",
         "capability.influence.before-model.contextInjection=unavailable",
@@ -197,8 +198,7 @@
         "capability.lifecycle.session-start=unavailable",
         "capability.lifecycle.stop=observational",
         "host extension surfaces are not exercised by this reference row",
-        "lifecycle observation requires host-owned notification binding",
-        "no public synchronous tool-blocking hook"
+        "lifecycle observation requires host-owned notification binding"
       ],
       "results": [
         {
