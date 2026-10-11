@@ -138,4 +138,18 @@ describe("Kiro CLI host profile", () => {
     }
     assert.equal(evaluated, 0);
   });
+
+  it("applies both projection rules to a downgraded deny that carries context (#35)", async () => {
+    const adapter = createKiroAdapter({ resolveTarget: () => "/fixture", write: () => {} });
+    const outcome: LifecycleOutcome = { decision: "deny", reason: "r", modelContext: "ctx" };
+    const afterTool = await adapter.project({ phase: "after-tool", sessionId: "kiro-session" }, outcome);
+    assert.equal(afterTool.decision, "observe");
+    assert.equal(afterTool.reason, "r");
+    assert.equal(afterTool.modelContext, undefined);
+    // session-start cannot block but can inject, so only the decision changes.
+    assert.deepEqual(
+      await adapter.project({ phase: "session-start", sessionId: "kiro-session" }, outcome),
+      { decision: "observe", reason: "r", modelContext: "ctx" },
+    );
+  });
 });

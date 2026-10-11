@@ -77,13 +77,17 @@ const projectCapability = (
   if (normalized.lifecycle[event.phase] === "unavailable") {
     return Object.freeze({ decision: "observe", reason: "lifecycle phase unavailable" });
   }
-  if (outcome.decision === "deny" && !canInfluence(normalized.influence[event.phase].decision)) {
-    return Object.freeze({ ...outcome, decision: "observe", reason: outcome.reason ?? "host cannot block" });
+  // Both rules apply independently. A downgraded deny must still lose context the
+  // phase cannot inject. The first default reason set wins, so a downgraded deny
+  // without a reason reports "host cannot block".
+  let projected = outcome;
+  if (projected.decision === "deny" && !canInfluence(normalized.influence[event.phase].decision)) {
+    projected = { ...projected, decision: "observe", reason: projected.reason ?? "host cannot block" };
   }
-  if (outcome.modelContext && !canInfluence(normalized.influence[event.phase].contextInjection)) {
-    return Object.freeze({ ...outcome, modelContext: undefined, reason: outcome.reason ?? "host cannot inject context" });
+  if (projected.modelContext && !canInfluence(normalized.influence[event.phase].contextInjection)) {
+    projected = { ...projected, modelContext: undefined, reason: projected.reason ?? "host cannot inject context" };
   }
-  return outcome;
+  return projected === outcome ? outcome : Object.freeze(projected);
 };
 
 const canInfluence = (fidelity: IntegrationFidelity): boolean =>
@@ -262,6 +266,11 @@ export async function probeHostConformance(adapter: AgentHostAdapter): Promise<r
       ? context.modelContext === undefined
       : context.modelContext === "conduit-private-context";
     results.push({ check: `context-${phase}`, status: contextMatches ? "pass" : "fail" });
+    const combined = await adapter.project({ phase, sessionId: "conformance" }, { decision: "deny", reason: "policy denied", modelContext: "conduit-private-context" });
+    const combinedContextMatches = caps.lifecycle[phase] === "unavailable" || !canInfluence(caps.influence[phase].contextInjection)
+      ? combined.modelContext === undefined
+      : combined.modelContext === "conduit-private-context";
+    results.push({ check: `decision-context-${phase}`, status: combined.decision === expected && Boolean(combined.reason) && combinedContextMatches ? "pass" : "fail" });
   }
   return Object.freeze(results);
 }

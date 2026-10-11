@@ -96,6 +96,26 @@
           "status": "pass"
         },
         {
+          "check": "decision-context-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-stop",
+          "status": "pass"
+        },
+        {
           "check": "decision-session-start",
           "status": "pass"
         },
@@ -238,6 +258,26 @@
           "status": "pass"
         },
         {
+          "check": "decision-context-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-stop",
+          "status": "pass"
+        },
+        {
           "check": "decision-session-start",
           "status": "pass"
         },
@@ -373,6 +413,26 @@
           "status": "pass"
         },
         {
+          "check": "decision-context-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-stop",
+          "status": "pass"
+        },
+        {
           "check": "decision-session-start",
           "status": "pass"
         },
@@ -495,6 +555,26 @@
         },
         {
           "check": "decision-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-stop",
           "status": "pass"
         },
         {
@@ -636,6 +716,26 @@
           "status": "pass"
         },
         {
+          "check": "decision-context-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-stop",
+          "status": "pass"
+        },
+        {
           "check": "decision-session-start",
           "status": "pass"
         },
@@ -763,6 +863,26 @@
           "status": "pass"
         },
         {
+          "check": "decision-context-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-stop",
+          "status": "pass"
+        },
+        {
           "check": "decision-session-start",
           "status": "pass"
         },
@@ -886,6 +1006,26 @@
         },
         {
           "check": "decision-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-after-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-model",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-before-tool",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-session-start",
+          "status": "pass"
+        },
+        {
+          "check": "decision-context-stop",
           "status": "pass"
         },
         {
