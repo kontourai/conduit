@@ -56,9 +56,10 @@ const embedded = createStrandsAdapter({
 ```
 
 Capability values distinguish `native`, `approximated`, `observational`,
-`static-only`, and `unavailable`. The Codex profile does not claim synchronous
-tool blocking. Strands and VoltAgent remain caller-bound because Conduit does
-not depend on their runtime packages.
+`static-only`, and `unavailable`. The Codex profile claims `before-tool`
+blocking and context injection through Codex hooks; every other Codex phase is
+observational or unavailable. Strands and VoltAgent remain caller-bound because
+Conduit does not depend on their runtime packages.
 
 Every lifecycle phase has separate `decision` and `contextInjection` fidelity.
 This prevents a host with native pre-tool denial, for example, from appearing
