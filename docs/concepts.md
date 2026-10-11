@@ -105,21 +105,23 @@ optional `context`) and returns a `LifecycleOutcome`: a `decision` of `allow`,
 `deny`, or `observe`, an optional `reason`, and optional `modelContext`.
 
 `project(event, outcome)` checks the normalized capabilities for the event's
-phase. The first rule that applies decides the result:
+phase and applies these rules in order:
 
 1. If the phase's `lifecycle` fidelity is `unavailable`, the result is
    `{ decision: "observe", reason: "lifecycle phase unavailable" }`. The
    original reason and context are dropped.
 2. If the outcome is `deny` and the phase's `decision` fidelity cannot
    influence execution, the decision becomes `observe`. The reason is kept, or
-   set to `host cannot block`. Because this rule returns, any `modelContext` on
-   the outcome is currently passed through unchanged, even when the phase
-   cannot inject context. This is a known defect, tracked in
-   [conduit#35](https://github.com/kontourai/conduit/issues/35).
+   set to `host cannot block`. Projection then continues to rule 3.
 3. If the outcome has `modelContext` and the phase's `contextInjection`
    fidelity cannot influence execution, `modelContext` is removed. The reason is
-   kept, or set to `host cannot inject context`.
-4. Otherwise the outcome is returned unchanged.
+   kept, or set to `host cannot inject context`. A downgraded deny goes through
+   this rule too, so it never carries context the phase cannot inject. When
+   rules 2 and 3 both apply, the reason from rule 2 wins: the original reason,
+   or `host cannot block`.
+4. If no rule changed the outcome, it is returned unchanged.
+
+Rule 1 returns immediately; rules 2 and 3 are independent and can both apply.
 
 In-process adapters first pass the outcome through the caller's
 `applyOutcome`, then apply the same rules to what it returns.
@@ -175,6 +177,8 @@ routing policy never enter Conduit.
 - `lifecycle-<phase>`, `decision-<phase>`, and `context-<phase>` for each phase:
   `project` downgrades allow, deny, and context outcomes exactly as the declared
   capabilities say it should.
+- `decision-context-<phase>` for each phase: a deny that carries `modelContext`
+  gets both the decision downgrade and the context removal the phase requires.
 
 `createConformanceReport(inputs)` probes each adapter and builds a
 `ConformanceReport`. Each adapter entry records its evidence scope, adapter and
