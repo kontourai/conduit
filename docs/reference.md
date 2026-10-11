@@ -11,7 +11,7 @@ together.
 | --- | --- |
 | `@kontourai/conduit` | Core types, `createManifestHarnessAdapter`, `createInProcessHostAdapter`, the Claude Code, Codex, OpenCode, Strands, and VoltAgent profiles and factories, `bindAdapterLifecycle`, and the conformance API |
 | `@kontourai/conduit/pi` | `piCapabilities`, `createPiAdapter`, `createPiLifecycleHandlers`, and Pi binding types |
-| `@kontourai/conduit/kiro` | `kiroCapabilities`, `createKiroAdapter`, `evaluateKiroHook`, and Kiro hook types |
+| `@kontourai/conduit/kiro` | `kiroCapabilities`, `createKiroAdapter`, `evaluateKiroHook`, `UnsupportedKiroHookEventError`, and Kiro hook types |
 | `@kontourai/conduit/conformance/host-conformance.json` | The committed reference conformance report |
 | `@kontourai/conduit/schemas/host-conformance.schema.json` | JSON Schema for conformance reports |
 
@@ -194,10 +194,12 @@ Hook events map to phases as follows. `session_id` becomes the event's
 | `postToolUse` | `after-tool` |
 | `stop` | `stop` |
 
-Any other `hook_event_name` produces an event whose `phase` is `undefined`.
-`evaluate` is still called with it. If the outcome is `deny` or carries
-`modelContext`, projection then throws a `TypeError`; otherwise the result is
-`exitCode: 0`.
+Any other `hook_event_name` is refused: `evaluateKiroHook` rejects with
+`UnsupportedKiroHookEventError` (`code: "UNSUPPORTED_KIRO_HOOK_EVENT"`, with
+the received name in `hookEventName`) before `evaluate` runs. Conduit does not
+guess a phase for an event it cannot classify. The caller decides how its hook
+process reports the error; exiting with a status other than `0` or `2` makes
+Kiro treat it as a hook failure rather than a block.
 
 The projected outcome becomes a `KiroHookResult`:
 

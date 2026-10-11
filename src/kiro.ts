@@ -87,11 +87,33 @@ const phaseByHook = Object.freeze({
   stop: "stop",
 } as const);
 
-const projectEvent = (event: KiroHookEvent): LifecycleEvent => ({
-  phase: phaseByHook[event.hook_event_name],
-  sessionId: event.session_id,
-  context: Object.freeze({ hostEvent: event }),
-});
+/**
+ * Raised for a decoded hook event whose `hook_event_name` Conduit does not map
+ * to a lifecycle phase. Refusing up front keeps an unclassified host event from
+ * reaching the application evaluator or being silently allowed.
+ */
+export class UnsupportedKiroHookEventError extends Error {
+  readonly code = "UNSUPPORTED_KIRO_HOOK_EVENT";
+  constructor(readonly hookEventName: unknown) {
+    super(
+      `Unsupported Kiro hook event: ${JSON.stringify(hookEventName) ?? String(hookEventName)}. ` +
+        `Expected one of ${Object.keys(phaseByHook).join(", ")}.`,
+    );
+    this.name = "UnsupportedKiroHookEventError";
+  }
+}
+
+const projectEvent = (event: KiroHookEvent): LifecycleEvent => {
+  // Own-key check: inherited names such as `constructor` are not hook events.
+  if (!Object.hasOwn(phaseByHook, event.hook_event_name)) {
+    throw new UnsupportedKiroHookEventError(event.hook_event_name);
+  }
+  return {
+    phase: phaseByHook[event.hook_event_name],
+    sessionId: event.session_id,
+    context: Object.freeze({ hostEvent: event }),
+  };
+};
 
 /**
  * Evaluate one decoded Kiro CLI hook event.
@@ -99,6 +121,9 @@ const projectEvent = (event: KiroHookEvent): LifecycleEvent => ({
  * The caller owns process I/O: decode Kiro's JSON stdin, write the returned
  * streams exactly, and exit with `exitCode`. This keeps Conduit embeddable and
  * makes the hook protocol directly testable.
+ *
+ * Rejects with {@link UnsupportedKiroHookEventError}, before `evaluate` runs,
+ * when `hook_event_name` is not one of the five mapped Kiro CLI hooks.
  */
 export async function evaluateKiroHook(
   options: KiroHookBindingOptions,

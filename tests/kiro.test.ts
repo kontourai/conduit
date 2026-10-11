@@ -4,6 +4,7 @@ import {
   createKiroAdapter,
   evaluateKiroHook,
   kiroCapabilities,
+  UnsupportedKiroHookEventError,
   type KiroHookEvent,
 } from "../src/kiro.js";
 import {
@@ -108,6 +109,34 @@ describe("Kiro CLI host profile", () => {
       "after-tool",
       "stop",
     ]);
+  });
+
+  it("refuses unmapped hook event names before evaluating them", async () => {
+    let evaluated = 0;
+    const adapter = createKiroAdapter({ resolveTarget: () => "/fixture", write: () => {} });
+    for (const outcome of [
+      { decision: "deny", reason: "policy denied" },
+      { decision: "allow", modelContext: "guidance" },
+      { decision: "allow" },
+    ] as const) {
+      for (const name of ["sessionEnd", "constructor", "toString"]) {
+        // Decoded stdin is untyped at runtime; a newer host can send any name.
+        const event = hook("stop", {}) as unknown as Record<string, unknown>;
+        event.hook_event_name = name;
+        await assert.rejects(
+          evaluateKiroHook(
+            { adapter, evaluate: () => { evaluated += 1; return outcome; } },
+            event as unknown as KiroHookEvent,
+          ),
+          (error: unknown) =>
+            error instanceof UnsupportedKiroHookEventError &&
+            error.code === "UNSUPPORTED_KIRO_HOOK_EVENT" &&
+            error.hookEventName === name &&
+            error.message.includes(JSON.stringify(name)),
+        );
+      }
+    }
+    assert.equal(evaluated, 0);
   });
 
   it("applies both projection rules to a downgraded deny that carries context (#35)", async () => {
