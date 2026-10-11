@@ -142,8 +142,8 @@ For each phase whose `lifecycle` fidelity is not `unavailable`, it calls
 `registrar.register` once with a handler that runs `evaluate` and then
 `adapter.project`. The handler throws if it receives an event for a different
 phase. The returned function calls every disposer that `register` returned, in
-reverse registration order. It reverses its disposer list in place, so calling
-it a second time runs every disposer again, in registration order.
+reverse registration order. Disposal happens once: calling the returned function
+again is a no-op.
 
 ## Pi entrypoint
 

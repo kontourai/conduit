@@ -466,7 +466,14 @@ export function bindAdapterLifecycle(options: LifecycleBindingOptions): () => vo
     });
     if (dispose) disposers.push(dispose);
   }
-  return () => { for (const dispose of disposers.reverse()) dispose(); };
+  // Disposal runs once, in reverse registration order. Later calls are no-ops,
+  // so a caller that disposes twice never re-runs or reorders host disposers.
+  let disposed = false;
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]();
+  };
 }
 
 export const strandsCapabilities: HostCapabilities = Object.freeze({
