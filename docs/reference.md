@@ -26,7 +26,7 @@ requires Node 22 or newer.
 | `LifecyclePhase` | `"session-start" \| "before-model" \| "before-tool" \| "after-tool" \| "stop"` |
 | `AssetKind` | `"skill" \| "agent" \| "hook" \| "prompt" \| "command" \| "context"` |
 | `LifecycleInfluence` | `{ decision, contextInjection }`, both `IntegrationFidelity` |
-| `HostCapabilities` | `lifecycle` (per phase), optional `influence` (per phase), deprecated `contextInjection` and `blocking`, and `install` (per asset kind) |
+| `HostCapabilities` | `lifecycle` (per phase), optional `influence` (per phase), `contextInjection` and `blocking` (deprecated but required), and `install` (per asset kind) |
 | `NormalizedHostCapabilities` | `lifecycle`, `influence`, and `install`, all explicit |
 | `PortableAsset` | `{ id, kind, content, targetHint? }` |
 | `InstallationReceipt` | `{ hostId, installed: { id, kind, digest }[], skipped: { id, kind, reason }[] }` |
@@ -34,8 +34,9 @@ requires Node 22 or newer.
 | `LifecycleOutcome` | `{ decision: "allow" \| "deny" \| "observe", reason?, modelContext? }` |
 | `AgentHostAdapter` | `{ id, capabilities(), install(assets), project(event, outcome) }` |
 
-`install` and `project` return promises. Installation receipts are frozen
-objects.
+`install` and `project` return promises. An installation receipt and its
+`installed` and `skipped` arrays are frozen, but the freeze is shallow: the
+entries inside the arrays are not frozen.
 
 ## Adapter factories
 
@@ -141,7 +142,8 @@ For each phase whose `lifecycle` fidelity is not `unavailable`, it calls
 `registrar.register` once with a handler that runs `evaluate` and then
 `adapter.project`. The handler throws if it receives an event for a different
 phase. The returned function calls every disposer that `register` returned, in
-reverse registration order.
+reverse registration order. It reverses its disposer list in place, so calling
+it a second time runs every disposer again, in registration order.
 
 ## Pi entrypoint
 
@@ -191,6 +193,11 @@ Hook events map to phases as follows. `session_id` becomes the event's
 | `preToolUse` | `before-tool` |
 | `postToolUse` | `after-tool` |
 | `stop` | `stop` |
+
+Any other `hook_event_name` produces an event whose `phase` is `undefined`.
+`evaluate` is still called with it. If the outcome is `deny` or carries
+`modelContext`, projection then throws a `TypeError`; otherwise the result is
+`exitCode: 0`.
 
 The projected outcome becomes a `KiroHookResult`:
 
@@ -244,3 +251,4 @@ These npm scripts run in a checkout of this repository.
 | `npm run verify` | Typecheck, test, conformance check, and `npm pack --dry-run` |
 | `npm run docs:check` | Run the docs-kit gate on the published docs |
 | `npm run docs:build` | Build the documentation site |
+| `npm run veritas:readiness` | Run `veritas readiness --working-tree` |

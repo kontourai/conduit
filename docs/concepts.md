@@ -92,7 +92,8 @@ prevents a host that can deny a tool call before it runs from appearing able to
 deny at session start or after a tool result.
 
 Older callers declared influence with two aggregate fields, `blocking` and
-`contextInjection`. Both are deprecated but still accepted.
+`contextInjection`. Both are deprecated, but `HostCapabilities` still requires
+them, even when `influence` is supplied.
 `normalizeCapabilities()` resolves each phase deterministically: it uses
 `influence[phase]` when present, and otherwise uses `blocking` as the phase's
 `decision` and `contextInjection` as the phase's `contextInjection`.
@@ -112,7 +113,9 @@ phase. The first rule that applies decides the result:
 2. If the outcome is `deny` and the phase's `decision` fidelity cannot
    influence execution, the decision becomes `observe`. The reason is kept, or
    set to `host cannot block`. Because this rule returns, any `modelContext` on
-   the outcome is passed through unchanged.
+   the outcome is currently passed through unchanged, even when the phase
+   cannot inject context. This is a known defect, tracked in
+   [conduit#35](https://github.com/kontourai/conduit/issues/35).
 3. If the outcome has `modelContext` and the phase's `contextInjection`
    fidelity cannot influence execution, `modelContext` is removed. The reason is
    kept, or set to `host cannot inject context`.
