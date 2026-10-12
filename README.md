@@ -1,5 +1,14 @@
 # Conduit
 
+**Portable agent-host contracts: lifecycle projection, asset installation, and executable conformance evidence.**
+
+[![npm version](https://img.shields.io/npm/v/%40kontourai%2Fconduit)](https://www.npmjs.com/package/@kontourai/conduit)
+[![CI](https://github.com/kontourai/conduit/actions/workflows/ci.yml/badge.svg)](https://github.com/kontourai/conduit/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-kontourai.github.io-blue)](https://kontourai.github.io/conduit/)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+[Documentation](https://kontourai.github.io/conduit/)
+
 Conduit is the portable boundary between agent products and the places they run.
 It describes lifecycle events, phase-specific context injection and decision
 fidelity, and
