@@ -1,5 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "purpose": "Project product assets and lifecycle behavior into agent hosts with honestly reported fidelity.",
+  "builtOn": [],
   "product": "conduit",
   "title": "Conduit",
   "tagline": "Portable agent-host contracts: lifecycle projection, asset installation, and executable conformance evidence",
