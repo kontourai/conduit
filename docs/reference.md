@@ -251,6 +251,6 @@ These npm scripts run in a checkout of this repository.
 | `npm run conformance:generate` | Build, then rewrite `conformance/host-conformance.json` and `docs/host-conformance.md` from the shipped profiles |
 | `npm run conformance:check` | Build, then fail if either generated artifact is stale |
 | `npm run verify` | Typecheck, test, conformance check, and `npm pack --dry-run` |
-| `npm run docs:check` | Run the docs-kit gate on the published docs |
+| `npm run docs:check` | Run the Corpus gate on the published docs |
 | `npm run docs:build` | Build the documentation site |
 | `npm run veritas:readiness` | Run `veritas readiness --working-tree` |
