@@ -14,8 +14,7 @@ jobs:
   gate:
     uses: kontourai/.github/.github/workflows/docs-gate.yml@main
     with:
-      # docs/reference.md covers src/, but README tracked only 7 of the last 9 src changes; warn until the habit is proven.
-      advisory-freshness: true
+      corpus-ref: b127e35a818b532369843731b3c64792baade83e
   pages:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: gate
