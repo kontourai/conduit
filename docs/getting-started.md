@@ -212,9 +212,9 @@ install structurally, because nothing existed inside the root beforehand:
   under `root` may be a symlink or be uninspectable, and an existing target may
   not have other hard links. Otherwise it refuses with
   `sandbox-target-outside-root` and does not write.
-- After installing, every entry under `root` must be a plain directory or
-  regular file, and every installed target must be a regular file with a single
-  link. Otherwise it
+- After installing, every entry under `root` must be a plain directory or a
+  regular file with a single link, and every installed target must be such a
+  file. Otherwise it
   refuses with `sandbox-write-unverified`. This step detects problems after the
   writes have run; it does not prevent them.
 
@@ -227,7 +227,10 @@ These checks do not catch:
   for example through a closure over a real path. A file adapter whose installed
   target is then missing is reported as `sandbox-write-unverified`; a write
   that also lands at its target is not.
-- Another process changing the temporary root between a check and a write.
+- Another process, or the binding's own `write`, changing the temporary root
+  between a check and a write, for example by creating a link to a real file.
+  A link left in the root is reported afterwards as `sandbox-write-unverified`,
+  but the write through it has already happened.
 - In-process sandboxes and hand-written adapters, which expose no targets to
   check. The probe still creates and removes the root for them and rejects
   symlinks left in it.

@@ -516,12 +516,17 @@ function passesThroughSymlink(root: string, target: string): boolean {
 function verifyRootContents(adapterId: string, root: string, installed: readonly string[]): void {
   for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
     if (!entry.isDirectory() && !entry.isFile()) throw new UnsafeConformanceProbeError(adapterId, "sandbox-write-unverified");
+    // A file with other links under the root shares content with a file elsewhere,
+    // so a write through it may have reached outside the root.
+    if (entry.isFile() && lstatSync(join(entry.parentPath, entry.name)).nlink !== 1) {
+      throw new UnsafeConformanceProbeError(adapterId, "sandbox-write-unverified");
+    }
   }
   for (const target of installed) {
     let file = false;
     try {
-      const stats = lstatSync(target);
-      file = stats.isFile() && stats.nlink === 1;
+      // Link counts are checked for every file by the walk above.
+      file = lstatSync(target).isFile();
     } catch {
       file = false;
     }

@@ -510,6 +510,16 @@ describe("Conformance probe host safety", () => {
       const writes: ((root: string) => ManifestHarnessOptions["write"])[] = [
         root => (target, content) => { claudeHomeBinding(root).write(target, content); if (target.endsWith("CLAUDE.md")) symlinkSync(elsewhere, join(root, "extra")); },
         () => (target, content) => { writeFileSync(join(elsewhere, basename(target)), content); },
+        // Links its own target to an outside file after the pre-write check, then writes through it.
+        root => (target, content) => {
+          if (target.endsWith("CLAUDE.md")) { writeFileSync(join(elsewhere, "linked-target.md"), "outside\n"); linkSync(join(elsewhere, "linked-target.md"), target); }
+          claudeHomeBinding(root).write(target, content);
+        },
+        // Leaves a non-target file in the root that shares its content with an outside file.
+        root => (target, content) => {
+          claudeHomeBinding(root).write(target, content);
+          if (target.endsWith("CLAUDE.md")) { writeFileSync(join(elsewhere, "linked-extra.md"), "outside\n"); linkSync(join(elsewhere, "linked-extra.md"), join(root, "extra.md")); }
+        },
       ];
       for (const write of writes) {
         const { factory, roots } = recordingFactory(root => createClaudeCodeAdapter({ resolveTarget: claudeHomeBinding(root).resolveTarget, write: write(root) }));
