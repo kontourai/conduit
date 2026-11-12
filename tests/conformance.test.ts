@@ -518,13 +518,18 @@ describe("Conformance probe host safety", () => {
       let foldsCase = false;
       try { foldsCase = statSync(join(detector, "PROBE")).ino === statSync(join(detector, "Probe")).ino; } catch { foldsCase = false; }
       rmSync(detector, { recursive: true, force: true });
-      const result = await probeWithAlias(home => join(home, "claude.MD"));
-      if (foldsCase) {
-        assert.ok(overlaps(result.outcome), String(result.outcome));
-        assert.ok(result.unchanged);
-      } else {
-        // A distinct file on a case-sensitive filesystem is a legitimate sandbox target.
-        assert.equal(result.outcome, "probed");
+      // An existing file (realpath can report its stored case) and a target
+      // under a directory that does not exist yet (only case-folding can match
+      // it against the adapter's own `skills/conformance-skill.md`).
+      for (const alias of [(home: string) => join(home, "claude.MD"), (home: string) => join(home, "SKILLS", "conformance-skill.md")]) {
+        const result = await probeWithAlias(alias);
+        if (foldsCase) {
+          assert.ok(overlaps(result.outcome), String(result.outcome));
+          assert.ok(result.unchanged);
+        } else {
+          // A distinct file on a case-sensitive filesystem is a legitimate sandbox target.
+          assert.equal(result.outcome, "probed");
+        }
       }
     });
   });
