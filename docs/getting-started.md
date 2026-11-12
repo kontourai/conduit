@@ -167,37 +167,66 @@ fails, or writes the wrong thing, goes undetected: the install checks still
 pass. The report says so. Its entry has `installEvidence: "inert"` and the
 limitation `probe.install-io=not-exercised`.
 
-To exercise your install I/O as well, bind a second adapter to a disposable
-target and pass it as `installSandbox`, either to `probeHostConformance(adapter,
-{ installSandbox })` or on the `EvidenceInput`. Its report entry has
-`installEvidence: "sandbox"`. The sandbox must have the same id and
-capabilities as the adapter under test and must be a separate object. An
+To exercise your install I/O as well, pass `installSandbox`: a function that
+builds an adapter bound to a directory the probe gives it.
+
+```ts
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { createClaudeCodeAdapter, createConformanceReport } from "@kontourai/conduit";
+
+const report = await createConformanceReport([{
+  adapter: claude,
+  installSandbox: root => createClaudeCodeAdapter({
+    resolveTarget: asset => join(root, `${asset.id}.md`),
+    write: (target, content) => writeFileSync(target, content),
+  }),
+  evidenceScope: "host-bound",
+  adapterVersion: conduitVersion,
+  hostId: "claude-code",
+  hostVersion: installedClaudeVersion,
+}]);
+```
+
+The probe creates a fresh, empty, private temporary directory, resolves its
+real path once, and passes it to your function as `root`. It installs the probe
+assets through the adapter you return, then removes the directory, also when
+installing fails. The same option exists on `probeHostConformance(adapter,
+{ installSandbox })`. The report entry has `installEvidence: "sandbox"`. An
 adapter that was not created by a Conduit factory, or a spread copy of one, is
 refused with `UnsafeConformanceProbeError` unless you pass a sandbox.
 
-Keeping the sandbox's I/O disposable is your responsibility. When Conduit built
-both adapters, the probe makes a best-effort check that the sandbox does not
-install where the adapter under test would:
+When your function returns a Conduit file adapter (from
+`createManifestHarnessAdapter` or a profile built on it), the probe checks the
+install structurally, because nothing existed inside the root beforehand:
 
-- It calls each `resolveTarget` once per probe asset, installs to exactly the
-  sandbox targets it checked, and refuses (`target-resolution-failed`, with the
-  original error as `cause`) if either resolver throws.
-- It compares targets after resolving relative paths, `.` segments, and
-  duplicate separators, following symlinks in the nearest existing ancestor,
-  and folding case when that ancestor's filesystem looks names up
-  case-insensitively. Any overlap is refused (`sandbox-overlaps-adapter`).
-- It refuses an in-process sandbox that shares the adapter's `installAsset`
-  function.
+- It calls `resolveTarget` once per probe asset and installs to exactly those
+  targets. If `resolveTarget` throws, it refuses with
+  `target-resolution-failed` and the original error as `cause`.
+- Before installing, every target must be an absolute, normalized path (no `.`,
+  `..`, or duplicate separators) strictly inside `root`. Otherwise it refuses
+  with `sandbox-target-outside-root`.
+- Immediately before each write, no existing component of the target's path
+  under `root` may be a symlink or be uninspectable. Otherwise it refuses with
+  `sandbox-target-outside-root` and does not write.
+- After installing, every entry under `root` must be a plain directory or
+  regular file, and every installed target must be a regular file. Otherwise it
+  refuses with `sandbox-write-unverified`. This step detects problems after the
+  writes have run; it does not prevent them.
 
-The check does not catch:
+The function must return a separate adapter with the same id and capabilities
+as the adapter under test (`sandbox-is-adapter`, `sandbox-mismatch`).
 
-- An in-process installer wrapped in a new function, such as
-  `asset => installAsset(asset)`, since only function identity is compared.
-- A `write` that ignores its target or writes somewhere else as well.
-- A hand-written sandbox, whose targets the probe cannot see.
-- Aliasing that survives normalization, such as hard links, bind mounts,
-  network paths, Unicode normalization differences, or a target that is not a
-  filesystem path.
+These checks do not catch:
+
+- A `write` or `installAsset` that ignores `root` and writes somewhere else,
+  for example through a closure over a real path. A file adapter whose installed
+  target is then missing is reported as `sandbox-write-unverified`; a write
+  that also lands at its target is not.
+- Another process changing the temporary root between a check and a write.
+- In-process sandboxes and hand-written adapters, which expose no targets to
+  check. The probe still creates and removes the root for them and rejects
+  symlinks left in it.
 
 Every check that fails, and every capability that is not `native`, appears in
 the report's `limitations`. See [Conformance evidence](concepts.md#conformance-evidence).

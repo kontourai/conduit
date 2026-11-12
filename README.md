@@ -32,12 +32,12 @@ Conduit factory, the probe runs the adapter's target mapping and fidelity rules
 without calling its `write` or `installAsset` binding, so a binding that fails
 to write still passes. Reports mark such entries `installEvidence: "inert"`
 with the limitation `probe.install-io=not-exercised`. To exercise your own
-install I/O, pass `{ installSandbox }`, a separate adapter with the same id and
-capabilities bound to a disposable target; those entries are marked
-`installEvidence: "sandbox"`. Conduit makes a best-effort check that a sandbox
-does not alias the real host's targets, but keeping the sandbox disposable is
-the caller's job; [Getting started](docs/getting-started.md) lists what the
-check cannot catch. Any other adapter is refused with
+install I/O, pass `{ installSandbox: root => createAdapter(bindingFor(root)) }`.
+The probe creates a fresh, empty, private temporary root, installs through the
+adapter your factory builds for it, verifies that every file landed inside the
+root, and removes the root. Those entries are marked
+`installEvidence: "sandbox"`. [Getting started](docs/getting-started.md) lists
+what the check cannot catch. Any other adapter is refused with
 `UnsafeConformanceProbeError` before anything is installed. Installation
 receipts contain asset identities, kinds, and SHA-256 digests, never asset
 contents, host-resolved targets, or credentials.

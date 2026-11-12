@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { describe, it } from "node:test";
 import {
-  type AgentHostAdapter, type PortableAsset,
+  type AgentHostAdapter, type ManifestHarnessOptions, type PortableAsset,
   bindAdapterLifecycle, claudeCodeCapabilities, codexCapabilities, createClaudeCodeAdapter, createCodexAdapter,
   createConformanceReport, createInProcessHostAdapter, createManifestHarnessAdapter,
   deriveConformanceLimitations,
@@ -371,38 +371,165 @@ describe("Conformance probe host safety", () => {
     assert.deepEqual(writes, []);
   });
 
-  it("installs through an explicit sandbox binding and never through the adapter under test", async () => {
+  /** A sandbox factory that records each root it is given, and the root's state at that moment. */
+  const recordingFactory = (bind: (root: string) => AgentHostAdapter = root => createClaudeCodeAdapter(claudeHomeBinding(root))) => {
+    const roots: { root: string; entries: string[]; mode: number }[] = [];
+    const factory = (root: string) => {
+      roots.push({ root, entries: readdirSync(root), mode: statSync(root).mode & 0o777 });
+      return bind(root);
+    };
+    return { factory, roots };
+  };
+  const refused = (reason: string) => (error: unknown) => error instanceof UnsafeConformanceProbeError && error.reason === reason;
+
+  it("installs through a sandbox built for a fresh private root, then removes the root", async () => {
     const home = seedUserHome();
-    const scratch = mkdtempSync(join(tmpdir(), "conduit-probe-scratch-"));
     try {
       const before = snapshot(home);
-      const adapter = createClaudeCodeAdapter(claudeHomeBinding(home));
-      const installSandbox = createClaudeCodeAdapter(claudeHomeBinding(scratch));
-      const results = await probeHostConformance(adapter, { installSandbox });
+      const written: string[] = [];
+      const { factory, roots } = recordingFactory(root => {
+        const binding = claudeHomeBinding(root);
+        return createClaudeCodeAdapter({ ...binding, write: (target, content) => { written.push(target); binding.write(target, content); } });
+      });
+      const results = await probeHostConformance(createClaudeCodeAdapter(claudeHomeBinding(home)), { installSandbox: factory });
       assert.ok(results.every(result => result.status === "pass"));
+      assert.equal(roots.length, 1);
+      const [{ root, entries, mode }] = roots as [{ root: string; entries: string[]; mode: number }];
+      assert.deepEqual(entries, []);
+      assert.equal(mode, 0o700);
+      assert.equal(written.length, 6);
+      assert.ok(written.every(target => target.startsWith(`${root}/`)), written.join());
+      assert.equal(existsSync(root), false);
       assert.deepEqual(snapshot(home), before);
-      assert.equal(readFileSync(join(scratch, "CLAUDE.md"), "utf8"), "conduit-private-context-content");
     } finally {
       rmSync(home, { recursive: true, force: true });
-      rmSync(scratch, { recursive: true, force: true });
     }
   });
 
-  it("refuses a sandbox built on the same binding, leaving the real home byte-identical", async () => {
+  it("refuses sandbox targets that are not normalized paths inside the root, before any write", async () => {
     const home = seedUserHome();
     try {
       const before = snapshot(home);
-      const binding = claudeHomeBinding(home);
-      const adapter = createClaudeCodeAdapter(binding);
-      await assert.rejects(probeHostConformance(adapter, { installSandbox: createClaudeCodeAdapter(binding) }), (error: unknown) =>
-        error instanceof UnsafeConformanceProbeError && error.reason === "sandbox-overlaps-adapter");
-      // A fresh binding object over the same directory resolves the same targets.
-      await assert.rejects(probeHostConformance(adapter, { installSandbox: createClaudeCodeAdapter(claudeHomeBinding(home)) }), (error: unknown) =>
-        error instanceof UnsafeConformanceProbeError && error.reason === "sandbox-overlaps-adapter");
+      const escapes: ((root: string) => string)[] = [
+        () => join(home, "CLAUDE.md"),
+        root => `${root}/../CLAUDE.md`,
+        root => `${root}/sub/../CLAUDE.md`,
+        root => `${root}/./CLAUDE.md`,
+        root => `${root}//CLAUDE.md`,
+        root => relative(process.cwd(), join(root, "CLAUDE.md")),
+        root => root,
+      ];
+      for (const escape of escapes) {
+        const written: string[] = [];
+        const { factory, roots } = recordingFactory(root => createClaudeCodeAdapter({
+          resolveTarget: asset => asset.kind === "context" ? escape(root) : claudeHomeBinding(root).resolveTarget(asset),
+          write: target => { written.push(target); },
+        }));
+        await assert.rejects(probeHostConformance(createClaudeCodeAdapter(claudeHomeBinding(home)), { installSandbox: factory }), refused("sandbox-target-outside-root"));
+        assert.deepEqual(written, []);
+        assert.equal(existsSync(roots[0]?.root ?? ""), false);
+      }
       assert.deepEqual(snapshot(home), before);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
+  });
+
+  it("refuses to write through a symlink planted in the root after the factory ran", async () => {
+    const home = seedUserHome();
+    try {
+      const before = snapshot(home);
+      // Planted during the first write: a directory link on a later target's
+      // path, and a dangling link at a later target itself.
+      const plants: ((root: string) => void)[] = [
+        root => symlinkSync(home, join(root, "prompts")),
+        root => symlinkSync(join(home, "planted.md"), join(root, "CLAUDE.md")),
+        root => { mkdirSync(join(root, "commands")); symlinkSync(join(home, "missing"), join(root, "commands", "conformance-command.md")); },
+      ];
+      for (const plant of plants) {
+        const { factory, roots } = recordingFactory(root => {
+          const binding = claudeHomeBinding(root);
+          let planted = false;
+          return createClaudeCodeAdapter({ ...binding, write: (target, content) => {
+            if (!planted) { planted = true; plant(root); }
+            binding.write(target, content);
+          } });
+        });
+        await assert.rejects(probeHostConformance(createClaudeCodeAdapter(claudeHomeBinding(home)), { installSandbox: factory }), refused("sandbox-target-outside-root"));
+        assert.equal(existsSync(roots[0]?.root ?? ""), false);
+      }
+      assert.deepEqual(snapshot(home), before);
+      assert.deepEqual(readdirSync(home).sort(), ["CLAUDE.md", "settings.json"]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("detects after installing a symlink left in the root or a target that was never written", async () => {
+    const elsewhere = mkdtempSync(join(tmpdir(), "conduit-probe-elsewhere-"));
+    try {
+      const writes: ((root: string) => ManifestHarnessOptions["write"])[] = [
+        root => (target, content) => { claudeHomeBinding(root).write(target, content); if (target.endsWith("CLAUDE.md")) symlinkSync(elsewhere, join(root, "extra")); },
+        () => (target, content) => { writeFileSync(join(elsewhere, basename(target)), content); },
+      ];
+      for (const write of writes) {
+        const { factory, roots } = recordingFactory(root => createClaudeCodeAdapter({ resolveTarget: claudeHomeBinding(root).resolveTarget, write: write(root) }));
+        await assert.rejects(
+          probeHostConformance(createClaudeCodeAdapter({ resolveTarget: asset => `/home/${asset.id}`, write: () => {} }), { installSandbox: factory }),
+          refused("sandbox-write-unverified"),
+        );
+        assert.equal(existsSync(roots[0]?.root ?? ""), false);
+      }
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves each sandbox target once and installs to exactly that target", async () => {
+    const home = seedUserHome();
+    try {
+      const before = snapshot(home);
+      const calls = new Map<string, number>();
+      const { factory } = recordingFactory(root => {
+        const toRoot = claudeHomeBinding(root);
+        const toHome = claudeHomeBinding(home);
+        // Answers inside the root first and with the real home on every later call.
+        return createClaudeCodeAdapter({
+          resolveTarget: asset => {
+            const count = (calls.get(asset.id) ?? 0) + 1;
+            calls.set(asset.id, count);
+            return count === 1 ? toRoot.resolveTarget(asset) : toHome.resolveTarget(asset);
+          },
+          write: toRoot.write,
+        });
+      });
+      const results = await probeHostConformance(createClaudeCodeAdapter(claudeHomeBinding(home)), { installSandbox: factory });
+      assert.ok(results.every(result => result.status === "pass"));
+      assert.deepEqual(snapshot(home), before);
+      assert.deepEqual([...calls.values()], [1, 1, 1, 1, 1, 1]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("removes the root and reports the cause when the sandbox resolver or write throws", async () => {
+    const failure = new Error("resolver failed");
+    const adapter = createClaudeCodeAdapter({ resolveTarget: asset => `/home/${asset.id}`, write: () => {} });
+    const throwing = recordingFactory(() => createClaudeCodeAdapter({ resolveTarget: () => { throw failure; }, write: () => {} }));
+    await assert.rejects(probeHostConformance(adapter, { installSandbox: throwing.factory }), (error: unknown) =>
+      refused("target-resolution-failed")(error) && (error as Error).cause === failure);
+    assert.equal(existsSync(throwing.roots[0]?.root ?? ""), false);
+    const failingWrite = recordingFactory(root => createClaudeCodeAdapter({ resolveTarget: claudeHomeBinding(root).resolveTarget, write: () => { throw new Error("disk full"); } }));
+    await assert.rejects(probeHostConformance(adapter, { installSandbox: failingWrite.factory }), /disk full/);
+    assert.equal(existsSync(failingWrite.roots[0]?.root ?? ""), false);
+  });
+
+  it("refuses a factory that returns the adapter itself or a different host", async () => {
+    const binding = { resolveTarget: () => undefined, write: () => { throw new Error("must not write"); } };
+    const adapter = createClaudeCodeAdapter(binding);
+    await assert.rejects(probeHostConformance(adapter, { installSandbox: () => adapter }), refused("sandbox-is-adapter"));
+    await assert.rejects(probeHostConformance(adapter, { installSandbox: () => createCodexAdapter(binding) }), refused("sandbox-mismatch"));
+    await assert.rejects(probeHostConformance(adapter, { installSandbox: () => createManifestHarnessAdapter({ id: "claude-code", capabilities: native, ...binding }) }), refused("sandbox-mismatch"));
   });
 
   it("never calls an in-process adapter's installAsset during the default probe", async () => {
@@ -416,30 +543,30 @@ describe("Conformance probe host safety", () => {
       assert.ok((await probeHostConformance(adapter)).every(result => result.status === "pass"), adapter.id);
     }
     assert.deepEqual(registered, []);
-    const adapter = createStrandsAdapter({ installAsset, applyOutcome });
-    await assert.rejects(probeHostConformance(adapter, { installSandbox: createStrandsAdapter({ installAsset, applyOutcome }) }), (error: unknown) =>
-      error instanceof UnsafeConformanceProbeError && error.reason === "sandbox-overlaps-adapter");
     const sandboxed: string[] = [];
-    assert.ok((await probeHostConformance(adapter, { installSandbox: createStrandsAdapter({ installAsset: asset => { sandboxed.push(asset.id); }, applyOutcome }) }))
+    const adapter = createStrandsAdapter({ installAsset, applyOutcome });
+    assert.ok((await probeHostConformance(adapter, { installSandbox: () => createStrandsAdapter({ installAsset: asset => { sandboxed.push(asset.id); }, applyOutcome }) }))
       .every(result => result.status === "pass"));
     assert.deepEqual(registered, []);
     assert.equal(sandboxed.length, 6);
   });
 
   it("records whether install I/O ran, so an inert probe cannot hide a broken write", async () => {
-    const failingWrite = { resolveTarget: (asset: PortableAsset) => `/fixture/${asset.kind}/${asset.id}`, write: () => { throw new Error("disk full"); } };
-    const adapter = createClaudeCodeAdapter(failingWrite);
+    const adapter = createClaudeCodeAdapter({ resolveTarget: asset => `/fixture/${asset.kind}/${asset.id}`, write: () => { throw new Error("disk full"); } });
     await assert.rejects(adapter.install([{ id: "a", kind: "skill", content: "x" }]), /disk full/);
     const inert = await createConformanceReport([{ adapter, evidenceScope: "host-bound", adapterVersion: "1", hostId: "fixture", hostVersion: "1" }]);
     assert.equal(inert.adapters[0]?.installEvidence, "inert");
     assert.ok(inert.adapters[0]?.limitations.includes(inertInstallLimitation));
     assert.equal(inertInstallLimitation, "probe.install-io=not-exercised");
-    // Exercising the same broken I/O through a sandbox surfaces the failure.
-    await assert.rejects(probeHostConformance(adapter, { installSandbox: createClaudeCodeAdapter({ ...failingWrite, resolveTarget: asset => `/scratch/${asset.kind}/${asset.id}` }) }), /disk full/);
-    const sandbox = createClaudeCodeAdapter({ resolveTarget: asset => `/scratch/${asset.kind}/${asset.id}`, write: () => {} });
-    const sandboxed = await createConformanceReport([{ adapter, installSandbox: sandbox, evidenceScope: "host-bound", adapterVersion: "1", hostId: "fixture", hostVersion: "1" }]);
+    const sandboxed = await createConformanceReport([{
+      adapter,
+      installSandbox: root => createClaudeCodeAdapter(claudeHomeBinding(root)),
+      evidenceScope: "host-bound", adapterVersion: "1", hostId: "fixture", hostVersion: "1",
+      limitations: [inertInstallLimitation, "kept"],
+    }]);
     assert.equal(sandboxed.adapters[0]?.installEvidence, "sandbox");
     assert.ok(!sandboxed.adapters[0]?.limitations.includes(inertInstallLimitation));
+    assert.ok(sandboxed.adapters[0]?.limitations.includes("kept"));
   });
 
   it("keeps the published schema in step with every emitted report field", () => {
@@ -455,161 +582,19 @@ describe("Conformance probe host safety", () => {
     }
   });
 
-  describe("refuses a sandbox that aliases the adapter's targets", () => {
-    /** Probe a Claude home adapter with a sandbox whose context target is `aliasOf(home)`. */
-    const probeWithAlias = async (aliasOf: (home: string) => string) => {
-      const home = seedUserHome();
-      const scratch = mkdtempSync(join(tmpdir(), "conduit-probe-scratch-"));
-      try {
-        const before = snapshot(home);
-        const real = claudeHomeBinding(scratch);
-        const installSandbox = createClaudeCodeAdapter({
-          resolveTarget: asset => asset.kind === "context" ? aliasOf(home) : real.resolveTarget(asset),
-          write: real.write,
-        });
-        const outcome = await probeHostConformance(createClaudeCodeAdapter(claudeHomeBinding(home)), { installSandbox })
-          .then(() => "probed", (error: unknown) => error);
-        return { outcome, unchanged: JSON.stringify([...snapshot(home)]) === JSON.stringify([...before]), home };
-      } finally {
-        rmSync(home, { recursive: true, force: true });
-        rmSync(scratch, { recursive: true, force: true });
-      }
-    };
-    const overlaps = (outcome: unknown) => outcome instanceof UnsafeConformanceProbeError && outcome.reason === "sandbox-overlaps-adapter";
-
-    it("through a symlinked directory, including a target that does not exist yet", async () => {
-      const links = mkdtempSync(join(tmpdir(), "conduit-probe-links-"));
-      try {
-        let n = 0;
-        // The second target's `skills` directory does not exist, so only its
-        // nearest existing ancestor can be resolved through the symlink.
-        for (const target of ["CLAUDE.md", join("skills", "conformance-skill.md")]) {
-          const result = await probeWithAlias(home => {
-            const link = join(links, `home-${n++}`);
-            symlinkSync(home, link);
-            return join(link, target);
-          });
-          assert.ok(overlaps(result.outcome), String(result.outcome));
-          assert.ok(result.unchanged);
-        }
-      } finally {
-        rmSync(links, { recursive: true, force: true });
-      }
-    });
-
-    it("through a relative path", async () => {
-      const result = await probeWithAlias(home => relative(process.cwd(), join(home, "CLAUDE.md")));
-      assert.ok(overlaps(result.outcome), String(result.outcome));
-      assert.ok(result.unchanged);
-    });
-
-    it("through dot segments and duplicate separators", async () => {
-      for (const alias of [(home: string) => `${home}/./CLAUDE.md`, (home: string) => `${home}//CLAUDE.md`]) {
-        const result = await probeWithAlias(alias);
-        assert.ok(overlaps(result.outcome), String(result.outcome));
-        assert.ok(result.unchanged);
-      }
-    });
-
-    it("through a case variant exactly when the filesystem folds case", async () => {
-      // Detect the filesystem's behavior independently of the code under test.
-      const detector = mkdtempSync(join(tmpdir(), "conduit-probe-case-"));
-      writeFileSync(join(detector, "Probe"), "");
-      let foldsCase = false;
-      try { foldsCase = statSync(join(detector, "PROBE")).ino === statSync(join(detector, "Probe")).ino; } catch { foldsCase = false; }
-      rmSync(detector, { recursive: true, force: true });
-      // An existing file (realpath can report its stored case) and a target
-      // under a directory that does not exist yet (only case-folding can match
-      // it against the adapter's own `skills/conformance-skill.md`).
-      for (const alias of [(home: string) => join(home, "claude.MD"), (home: string) => join(home, "SKILLS", "conformance-skill.md")]) {
-        const result = await probeWithAlias(alias);
-        if (foldsCase) {
-          assert.ok(overlaps(result.outcome), String(result.outcome));
-          assert.ok(result.unchanged);
-        } else {
-          // A distinct file on a case-sensitive filesystem is a legitimate sandbox target.
-          assert.equal(result.outcome, "probed");
-        }
-      }
-    });
-  });
-
-  it("resolves each sandbox target once and installs to exactly that target", async () => {
-    const home = seedUserHome();
-    const scratch = mkdtempSync(join(tmpdir(), "conduit-probe-scratch-"));
-    try {
-      const before = snapshot(home);
-      const calls = new Map<string, number>();
-      const toScratch = claudeHomeBinding(scratch);
-      const toHome = claudeHomeBinding(home);
-      // Answers with the scratch target first and the real home on every later call.
-      const installSandbox = createClaudeCodeAdapter({
-        resolveTarget: asset => {
-          const count = (calls.get(asset.id) ?? 0) + 1;
-          calls.set(asset.id, count);
-          return count === 1 ? toScratch.resolveTarget(asset) : toHome.resolveTarget(asset);
-        },
-        write: toScratch.write,
-      });
-      const results = await probeHostConformance(createClaudeCodeAdapter(toHome), { installSandbox });
-      assert.ok(results.every(result => result.status === "pass"));
-      assert.deepEqual(snapshot(home), before);
-      assert.equal(readFileSync(join(scratch, "CLAUDE.md"), "utf8"), "conduit-private-context-content");
-      assert.deepEqual([...calls.values()], [1, 1, 1, 1, 1, 1]);
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-      rmSync(scratch, { recursive: true, force: true });
-    }
-  });
-
-  it("refuses with the cause when a resolver throws during the sandbox check, before any install", async () => {
-    const written: string[] = [];
-    const write = (target: string) => { written.push(target); };
-    const failure = new Error("resolver failed");
-    const adapter = createClaudeCodeAdapter({ resolveTarget: asset => `/home/${asset.id}`, write });
-    for (const [subject, installSandbox] of [
-      ["sandbox", createClaudeCodeAdapter({ resolveTarget: () => { throw failure; }, write })],
-      ["adapter", createClaudeCodeAdapter({ resolveTarget: asset => `/scratch/${asset.id}`, write })],
-    ] as const) {
-      const probed = subject === "adapter"
-        ? createClaudeCodeAdapter({ resolveTarget: () => { throw failure; }, write })
-        : adapter;
-      await assert.rejects(probeHostConformance(probed, { installSandbox }), (error: unknown) =>
-        error instanceof UnsafeConformanceProbeError && error.reason === "target-resolution-failed" && error.cause === failure);
-    }
-    assert.deepEqual(written, []);
-  });
-
-  it("never lets a caller-supplied limitation contradict sandbox install evidence", async () => {
-    const adapter = createClaudeCodeAdapter({ resolveTarget: asset => `/home/${asset.id}`, write: () => {} });
-    const installSandbox = createClaudeCodeAdapter({ resolveTarget: asset => `/scratch/${asset.id}`, write: () => {} });
-    const report = await createConformanceReport([{ adapter, installSandbox, evidenceScope: "host-bound", adapterVersion: "1", hostId: "fixture", hostVersion: "1", limitations: [inertInstallLimitation, "kept"] }]);
-    assert.equal(report.adapters[0]?.installEvidence, "sandbox");
-    assert.ok(!report.adapters[0]?.limitations.includes(inertInstallLimitation));
-    assert.ok(report.adapters[0]?.limitations.includes("kept"));
-  });
-
   it("parses version 3 and version 2 reports and rejects an invalid installEvidence", () => {
     const entry = (extra: object) => JSON.stringify({ evidenceScope: "adapter-contract", adapterId: "x", ...extra });
     const report = (version: string, extra: object) => `{"schemaVersion":"${version}","adapters":[${entry(extra)}]}`;
     assert.equal(parseConformanceReport(report("3", { installEvidence: "inert" })).schemaVersion, "3");
     assert.equal(parseConformanceReport(report("3", { installEvidence: "sandbox" })).schemaVersion, "3");
     assert.equal(parseConformanceReport(report("2", {})).schemaVersion, "2");
+    // A parsed version 2 report serializes and renders without conversion.
+    const v2 = parseConformanceReport(report("2", {}));
+    assert.deepEqual(JSON.parse(serializeConformanceReport(v2)), JSON.parse(report("2", {})));
     for (const invalid of [report("3", {}), report("3", { installEvidence: "host" }), report("2", { installEvidence: "inert" }), '{"schemaVersion":"3"}']) {
       assert.throws(() => parseConformanceReport(invalid), (error: unknown) =>
         error instanceof InvalidConformanceReportError && error.code === "INVALID_CONFORMANCE_REPORT", invalid);
     }
     assert.throws(() => parseConformanceReport('{"schemaVersion":"4","adapters":[]}'), UnsupportedConformanceSchemaVersionError);
-  });
-
-  it("refuses a sandbox that is the adapter itself or describes a different host", async () => {
-    const binding = { resolveTarget: () => undefined, write: () => { throw new Error("must not write"); } };
-    const adapter = createClaudeCodeAdapter(binding);
-    await assert.rejects(probeHostConformance(adapter, { installSandbox: adapter }), (error: unknown) =>
-      error instanceof UnsafeConformanceProbeError && error.reason === "sandbox-is-adapter");
-    await assert.rejects(probeHostConformance(adapter, { installSandbox: createCodexAdapter(binding) }), (error: unknown) =>
-      error instanceof UnsafeConformanceProbeError && error.reason === "sandbox-mismatch");
-    await assert.rejects(probeHostConformance(adapter, { installSandbox: createManifestHarnessAdapter({ id: "claude-code", capabilities: native, ...binding }) }), (error: unknown) =>
-      error instanceof UnsafeConformanceProbeError && error.reason === "sandbox-mismatch");
   });
 });

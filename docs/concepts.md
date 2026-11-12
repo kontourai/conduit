@@ -170,15 +170,14 @@ routing policy never enter Conduit.
 adapter. It never installs probe assets through the adapter under test. For an
 adapter created by a Conduit factory, it runs the adapter's target mapping and
 fidelity rules without the caller's `write` or `installAsset` binding. Otherwise
-it installs through `options.installSandbox`, a separate adapter with the same
-id and capabilities that the caller bound to a disposable target, or throws
+it calls `options.installSandbox(root)` with a fresh, empty, private temporary
+directory and installs through the adapter it returns, or throws
 `UnsafeConformanceProbeError` (`code: "UNSAFE_CONFORMANCE_PROBE"`) before
 installing anything. The default path performs no install I/O, so write
-failures go undetected. Only a sandbox exercises the caller's binding. When
-Conduit built both adapters, the probe makes a best-effort check that the
-sandbox does not install where the adapter under test would. The check and
-what it cannot catch are listed in
-[Getting started](getting-started.md). The checks are:
+failures go undetected. Only a sandbox exercises the caller's binding. For a
+Conduit file adapter, every sandbox target must lie inside that root, and the
+probe removes the root afterwards. The structural checks and what they cannot
+catch are listed in [Getting started](getting-started.md). The checks are:
 
 - `capability-completeness`: all five phases, both influence values per phase,
   and all six asset kinds are declared with valid fidelity values.
