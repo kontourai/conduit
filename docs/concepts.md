@@ -175,8 +175,10 @@ id and capabilities that the caller bound to a disposable target, or throws
 `UnsafeConformanceProbeError` (`code: "UNSAFE_CONFORMANCE_PROBE"`) before
 installing anything. The default path performs no install I/O, so write
 failures go undetected. Only a sandbox exercises the caller's binding. When
-Conduit built both adapters, a sandbox that resolves a probe asset to the same
-target, or shares the same `installAsset` function, is refused. The checks are:
+Conduit built both adapters, the probe makes a best-effort check that the
+sandbox does not install where the adapter under test would. The check and
+what it cannot catch are listed in
+[Getting started](getting-started.md). The checks are:
 
 - `capability-completeness`: all five phases, both influence values per phase,
   and all six asset kinds are declared with valid fidelity values.
@@ -209,10 +211,13 @@ timestamped, so the same inputs always serialize to the same bytes.
 
 Native capabilities and passing probes produce no limitation.
 
-The report has `schemaVersion: "2"`, which records per-phase influence.
-`parseConformanceReport()` accepts only that version and throws
-`UnsupportedConformanceSchemaVersionError` for any other, rather than
-reinterpreting older evidence.
+The report has `schemaVersion: "3"`, which records per-phase influence and
+each entry's `installEvidence`. `parseConformanceReport()` also reads version
+2 reports, whose entries have no `installEvidence`, so whether install I/O ran
+is unknown for them. It throws `UnsupportedConformanceSchemaVersionError` for
+any other version, rather than reinterpreting evidence, and
+`InvalidConformanceReportError` when `installEvidence` is missing or invalid
+in version 3 or present in version 2.
 
 ## Evidence scope
 

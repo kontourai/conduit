@@ -171,15 +171,33 @@ To exercise your install I/O as well, bind a second adapter to a disposable
 target and pass it as `installSandbox`, either to `probeHostConformance(adapter,
 { installSandbox })` or on the `EvidenceInput`. Its report entry has
 `installEvidence: "sandbox"`. The sandbox must have the same id and
-capabilities as the adapter under test and must be a separate object. When
-Conduit built both adapters, the probe also refuses a sandbox that resolves any
-probe asset to the same target, or registers through the same `installAsset`
-function, as the adapter under test. That catches a second adapter built on the
-same binding. It cannot catch a `write` that ignores its target, or a
-hand-written sandbox, so keeping the sandbox's I/O disposable is your
-responsibility. An adapter that was not created by a Conduit factory, or a
-spread copy of one, is refused with `UnsafeConformanceProbeError` unless you
-pass a sandbox.
+capabilities as the adapter under test and must be a separate object. An
+adapter that was not created by a Conduit factory, or a spread copy of one, is
+refused with `UnsafeConformanceProbeError` unless you pass a sandbox.
+
+Keeping the sandbox's I/O disposable is your responsibility. When Conduit built
+both adapters, the probe makes a best-effort check that the sandbox does not
+install where the adapter under test would:
+
+- It calls each `resolveTarget` once per probe asset, installs to exactly the
+  sandbox targets it checked, and refuses (`target-resolution-failed`, with the
+  original error as `cause`) if either resolver throws.
+- It compares targets after resolving relative paths, `.` segments, and
+  duplicate separators, following symlinks in the nearest existing ancestor,
+  and folding case when that ancestor's filesystem looks names up
+  case-insensitively. Any overlap is refused (`sandbox-overlaps-adapter`).
+- It refuses an in-process sandbox that shares the adapter's `installAsset`
+  function.
+
+The check does not catch:
+
+- An in-process installer wrapped in a new function, such as
+  `asset => installAsset(asset)`, since only function identity is compared.
+- A `write` that ignores its target or writes somewhere else as well.
+- A hand-written sandbox, whose targets the probe cannot see.
+- Aliasing that survives normalization, such as hard links, bind mounts,
+  network paths, Unicode normalization differences, or a target that is not a
+  filesystem path.
 
 Every check that fails, and every capability that is not `native`, appears in
 the report's `limitations`. See [Conformance evidence](concepts.md#conformance-evidence).

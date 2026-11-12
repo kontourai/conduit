@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 import {
   type AgentHostAdapter, type PortableAsset,
@@ -11,7 +11,7 @@ import {
   normalizeCapabilities, parseConformanceReport,
   createOpenCodeAdapter, createStrandsAdapter, createVoltAgentAdapter, openCodeCapabilities,
   probeHostConformance, renderConformanceMatrix, serializeConformanceReport,
-  inertInstallLimitation, strandsCapabilities, UnsafeConformanceProbeError, UnsupportedConformanceSchemaVersionError, voltAgentCapabilities, type EvidenceInput, type HostCapabilities,
+  inertInstallLimitation, InvalidConformanceReportError, strandsCapabilities, UnsafeConformanceProbeError, UnsupportedConformanceSchemaVersionError, voltAgentCapabilities, type EvidenceInput, type HostCapabilities,
 } from "../src/index.js";
 
 const all = <T>(value: T) => ({ skill: value, agent: value, hook: value, prompt: value, command: value, context: value });
@@ -446,11 +446,155 @@ describe("Conformance probe host safety", () => {
     const schema = JSON.parse(readFileSync(new URL("../../schemas/host-conformance.schema.json", import.meta.url), "utf8"));
     const committed = parseConformanceReport(readFileSync(new URL("../../conformance/host-conformance.json", import.meta.url), "utf8"));
     const allowed = Object.keys(schema.$defs.adapter.properties);
+    assert.equal(committed.schemaVersion, "3");
+    if (committed.schemaVersion !== "3") return;
     assert.ok(committed.adapters.length > 0);
     for (const entry of committed.adapters) {
       for (const key of Object.keys(entry)) assert.ok(allowed.includes(key), key);
       assert.ok(schema.$defs.adapter.properties.installEvidence.enum.includes(entry.installEvidence), entry.adapterId);
     }
+  });
+
+  describe("refuses a sandbox that aliases the adapter's targets", () => {
+    /** Probe a Claude home adapter with a sandbox whose context target is `aliasOf(home)`. */
+    const probeWithAlias = async (aliasOf: (home: string) => string) => {
+      const home = seedUserHome();
+      const scratch = mkdtempSync(join(tmpdir(), "conduit-probe-scratch-"));
+      try {
+        const before = snapshot(home);
+        const real = claudeHomeBinding(scratch);
+        const installSandbox = createClaudeCodeAdapter({
+          resolveTarget: asset => asset.kind === "context" ? aliasOf(home) : real.resolveTarget(asset),
+          write: real.write,
+        });
+        const outcome = await probeHostConformance(createClaudeCodeAdapter(claudeHomeBinding(home)), { installSandbox })
+          .then(() => "probed", (error: unknown) => error);
+        return { outcome, unchanged: JSON.stringify([...snapshot(home)]) === JSON.stringify([...before]), home };
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+        rmSync(scratch, { recursive: true, force: true });
+      }
+    };
+    const overlaps = (outcome: unknown) => outcome instanceof UnsafeConformanceProbeError && outcome.reason === "sandbox-overlaps-adapter";
+
+    it("through a symlinked directory, including a target that does not exist yet", async () => {
+      const links = mkdtempSync(join(tmpdir(), "conduit-probe-links-"));
+      try {
+        let n = 0;
+        // The second target's `skills` directory does not exist, so only its
+        // nearest existing ancestor can be resolved through the symlink.
+        for (const target of ["CLAUDE.md", join("skills", "conformance-skill.md")]) {
+          const result = await probeWithAlias(home => {
+            const link = join(links, `home-${n++}`);
+            symlinkSync(home, link);
+            return join(link, target);
+          });
+          assert.ok(overlaps(result.outcome), String(result.outcome));
+          assert.ok(result.unchanged);
+        }
+      } finally {
+        rmSync(links, { recursive: true, force: true });
+      }
+    });
+
+    it("through a relative path", async () => {
+      const result = await probeWithAlias(home => relative(process.cwd(), join(home, "CLAUDE.md")));
+      assert.ok(overlaps(result.outcome), String(result.outcome));
+      assert.ok(result.unchanged);
+    });
+
+    it("through dot segments and duplicate separators", async () => {
+      for (const alias of [(home: string) => `${home}/./CLAUDE.md`, (home: string) => `${home}//CLAUDE.md`]) {
+        const result = await probeWithAlias(alias);
+        assert.ok(overlaps(result.outcome), String(result.outcome));
+        assert.ok(result.unchanged);
+      }
+    });
+
+    it("through a case variant exactly when the filesystem folds case", async () => {
+      // Detect the filesystem's behavior independently of the code under test.
+      const detector = mkdtempSync(join(tmpdir(), "conduit-probe-case-"));
+      writeFileSync(join(detector, "Probe"), "");
+      let foldsCase = false;
+      try { foldsCase = statSync(join(detector, "PROBE")).ino === statSync(join(detector, "Probe")).ino; } catch { foldsCase = false; }
+      rmSync(detector, { recursive: true, force: true });
+      const result = await probeWithAlias(home => join(home, "claude.MD"));
+      if (foldsCase) {
+        assert.ok(overlaps(result.outcome), String(result.outcome));
+        assert.ok(result.unchanged);
+      } else {
+        // A distinct file on a case-sensitive filesystem is a legitimate sandbox target.
+        assert.equal(result.outcome, "probed");
+      }
+    });
+  });
+
+  it("resolves each sandbox target once and installs to exactly that target", async () => {
+    const home = seedUserHome();
+    const scratch = mkdtempSync(join(tmpdir(), "conduit-probe-scratch-"));
+    try {
+      const before = snapshot(home);
+      const calls = new Map<string, number>();
+      const toScratch = claudeHomeBinding(scratch);
+      const toHome = claudeHomeBinding(home);
+      // Answers with the scratch target first and the real home on every later call.
+      const installSandbox = createClaudeCodeAdapter({
+        resolveTarget: asset => {
+          const count = (calls.get(asset.id) ?? 0) + 1;
+          calls.set(asset.id, count);
+          return count === 1 ? toScratch.resolveTarget(asset) : toHome.resolveTarget(asset);
+        },
+        write: toScratch.write,
+      });
+      const results = await probeHostConformance(createClaudeCodeAdapter(toHome), { installSandbox });
+      assert.ok(results.every(result => result.status === "pass"));
+      assert.deepEqual(snapshot(home), before);
+      assert.equal(readFileSync(join(scratch, "CLAUDE.md"), "utf8"), "conduit-private-context-content");
+      assert.deepEqual([...calls.values()], [1, 1, 1, 1, 1, 1]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses with the cause when a resolver throws during the sandbox check, before any install", async () => {
+    const written: string[] = [];
+    const write = (target: string) => { written.push(target); };
+    const failure = new Error("resolver failed");
+    const adapter = createClaudeCodeAdapter({ resolveTarget: asset => `/home/${asset.id}`, write });
+    for (const [subject, installSandbox] of [
+      ["sandbox", createClaudeCodeAdapter({ resolveTarget: () => { throw failure; }, write })],
+      ["adapter", createClaudeCodeAdapter({ resolveTarget: asset => `/scratch/${asset.id}`, write })],
+    ] as const) {
+      const probed = subject === "adapter"
+        ? createClaudeCodeAdapter({ resolveTarget: () => { throw failure; }, write })
+        : adapter;
+      await assert.rejects(probeHostConformance(probed, { installSandbox }), (error: unknown) =>
+        error instanceof UnsafeConformanceProbeError && error.reason === "target-resolution-failed" && error.cause === failure);
+    }
+    assert.deepEqual(written, []);
+  });
+
+  it("never lets a caller-supplied limitation contradict sandbox install evidence", async () => {
+    const adapter = createClaudeCodeAdapter({ resolveTarget: asset => `/home/${asset.id}`, write: () => {} });
+    const installSandbox = createClaudeCodeAdapter({ resolveTarget: asset => `/scratch/${asset.id}`, write: () => {} });
+    const report = await createConformanceReport([{ adapter, installSandbox, evidenceScope: "host-bound", adapterVersion: "1", hostId: "fixture", hostVersion: "1", limitations: [inertInstallLimitation, "kept"] }]);
+    assert.equal(report.adapters[0]?.installEvidence, "sandbox");
+    assert.ok(!report.adapters[0]?.limitations.includes(inertInstallLimitation));
+    assert.ok(report.adapters[0]?.limitations.includes("kept"));
+  });
+
+  it("parses version 3 and version 2 reports and rejects an invalid installEvidence", () => {
+    const entry = (extra: object) => JSON.stringify({ evidenceScope: "adapter-contract", adapterId: "x", ...extra });
+    const report = (version: string, extra: object) => `{"schemaVersion":"${version}","adapters":[${entry(extra)}]}`;
+    assert.equal(parseConformanceReport(report("3", { installEvidence: "inert" })).schemaVersion, "3");
+    assert.equal(parseConformanceReport(report("3", { installEvidence: "sandbox" })).schemaVersion, "3");
+    assert.equal(parseConformanceReport(report("2", {})).schemaVersion, "2");
+    for (const invalid of [report("3", {}), report("3", { installEvidence: "host" }), report("2", { installEvidence: "inert" }), '{"schemaVersion":"3"}']) {
+      assert.throws(() => parseConformanceReport(invalid), (error: unknown) =>
+        error instanceof InvalidConformanceReportError && error.code === "INVALID_CONFORMANCE_REPORT", invalid);
+    }
+    assert.throws(() => parseConformanceReport('{"schemaVersion":"4","adapters":[]}'), UnsupportedConformanceSchemaVersionError);
   });
 
   it("refuses a sandbox that is the adapter itself or describes a different host", async () => {

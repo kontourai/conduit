@@ -5,8 +5,18 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "adapters"],
+  "allOf": [
+    {
+      "if": { "properties": { "schemaVersion": { "const": "3" } } },
+      "then": { "properties": { "adapters": { "type": "array", "items": { "type": "object", "required": ["installEvidence"] } } } }
+    },
+    {
+      "if": { "properties": { "schemaVersion": { "const": "2" } } },
+      "then": { "properties": { "adapters": { "type": "array", "items": { "type": "object", "not": { "required": ["installEvidence"] } } } } }
+    }
+  ],
   "properties": {
-    "schemaVersion": { "const": "2" },
+    "schemaVersion": { "enum": ["2", "3"] },
     "adapters": {
       "type": "array",
       "items": { "$ref": "#/$defs/adapter" }

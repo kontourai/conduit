@@ -34,7 +34,10 @@ to write still passes. Reports mark such entries `installEvidence: "inert"`
 with the limitation `probe.install-io=not-exercised`. To exercise your own
 install I/O, pass `{ installSandbox }`, a separate adapter with the same id and
 capabilities bound to a disposable target; those entries are marked
-`installEvidence: "sandbox"`. Any other adapter is refused with
+`installEvidence: "sandbox"`. Conduit makes a best-effort check that a sandbox
+does not alias the real host's targets, but keeping the sandbox disposable is
+the caller's job; [Getting started](docs/getting-started.md) lists what the
+check cannot catch. Any other adapter is refused with
 `UnsafeConformanceProbeError` before anything is installed. Installation
 receipts contain asset identities, kinds, and SHA-256 digests, never asset
 contents, host-resolved targets, or credentials.
@@ -163,8 +166,9 @@ timestamp-free JSON in `conformance/host-conformance.json` plus the generated
 matrix in `docs/host-conformance.md`. `npm run conformance:check` fails when
 either artifact is stale and runs inside `npm run verify` and CI.
 The published `schemas/host-conformance.schema.json` defines the versioned
-machine-readable result contract. Schema version 2 records phase influence;
-`parseConformanceReport()` rejects other versions with
+machine-readable result contract. Schema version 3 records phase influence
+and how the probe installed its assets. `parseConformanceReport()` also reads
+version 2 and rejects other versions with
 `UnsupportedConformanceSchemaVersionError` instead of silently reinterpreting
 evidence.
 

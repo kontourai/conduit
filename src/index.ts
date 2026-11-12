@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 
 export type IntegrationFidelity = "native" | "approximated" | "observational" | "static-only" | "unavailable";
 export type LifecyclePhase = "session-start" | "before-model" | "before-tool" | "after-tool" | "stop";
@@ -103,18 +105,24 @@ const canInfluence = (fidelity: IntegrationFidelity): boolean =>
 interface FactoryInstall {
   inert: AgentHostAdapter["install"];
   resolveTarget?: ManifestHarnessOptions["resolveTarget"];
+  /** Install through the caller's `write` using targets resolved beforehand, keyed by asset id. */
+  installResolved?(assets: readonly PortableAsset[], targets: ReadonlyMap<string, string | undefined>): Promise<InstallationReceipt>;
   installAsset?: InProcessHostOptions["installAsset"];
 }
 const factoryInstalls = new WeakMap<AgentHostAdapter, FactoryInstall>();
 
 /** Harness adapter with host-owned path mapping and I/O. Conduit never guesses config locations. */
 export function createManifestHarnessAdapter(options: ManifestHarnessOptions): AgentHostAdapter {
-  const install = async (assets: readonly PortableAsset[], write: ManifestHarnessOptions["write"] | undefined): Promise<InstallationReceipt> => {
+  const install = async (
+    assets: readonly PortableAsset[],
+    write: ManifestHarnessOptions["write"] | undefined,
+    resolveTarget: ManifestHarnessOptions["resolveTarget"] = options.resolveTarget,
+  ): Promise<InstallationReceipt> => {
     const installed: InstallationReceipt["installed"][number][] = [];
     const skipped: InstallationReceipt["skipped"][number][] = [];
     for (const asset of assets) {
       const fidelity = options.capabilities.install[asset.kind];
-      const target = options.resolveTarget(asset);
+      const target = resolveTarget(asset);
       if (fidelity === "unavailable" || !target) {
         skipped.push({ id: asset.id, kind: asset.kind, reason: fidelity === "unavailable" ? "unsupported" : "unmapped" });
         continue;
@@ -132,7 +140,11 @@ export function createManifestHarnessAdapter(options: ManifestHarnessOptions): A
       return projectCapability(options.capabilities, event, outcome);
     },
   };
-  factoryInstalls.set(adapter, { inert: assets => install(assets, undefined), resolveTarget: options.resolveTarget });
+  factoryInstalls.set(adapter, {
+    inert: assets => install(assets, undefined),
+    resolveTarget: options.resolveTarget,
+    installResolved: (assets, targets) => install(assets, options.write, asset => targets.get(asset.id)),
+  });
   return adapter;
 }
 
@@ -184,10 +196,9 @@ export interface AdapterConformanceEvidence {
   /**
    * How the probe installed its assets. `inert` ran the adapter's target
    * mapping and receipt without the caller's install I/O; `sandbox` installed
-   * through a caller-supplied `installSandbox` adapter. Reports written before
-   * this field existed omit it; treat absence as unknown.
+   * through a caller-supplied `installSandbox` adapter.
    */
-  installEvidence?: InstallEvidence;
+  installEvidence: InstallEvidence;
   adapterId: string;
   adapterVersion: string;
   hostId: string;
@@ -198,8 +209,25 @@ export interface AdapterConformanceEvidence {
 }
 
 export interface ConformanceReport {
-  schemaVersion: "2";
+  schemaVersion: "3";
   adapters: readonly AdapterConformanceEvidence[];
+}
+
+/** Version 2 entries predate `installEvidence`; whether install I/O ran is unknown. */
+export type AdapterConformanceEvidenceV2 = Omit<AdapterConformanceEvidence, "installEvidence">;
+
+export interface ConformanceReportV2 {
+  schemaVersion: "2";
+  adapters: readonly AdapterConformanceEvidenceV2[];
+}
+
+/** The report parsed a supported version but carries a value that version forbids. */
+export class InvalidConformanceReportError extends Error {
+  readonly code = "INVALID_CONFORMANCE_REPORT";
+  constructor(message: string) {
+    super(`Invalid Conduit conformance report: ${message}`);
+    this.name = "InvalidConformanceReportError";
+  }
 }
 
 export class UnsupportedConformanceSchemaVersionError extends Error {
@@ -266,7 +294,12 @@ export function deriveConformanceLimitations(
   return Object.freeze([...limitations].sort());
 }
 
-export type UnsafeConformanceProbeReason = "no-inert-install" | "sandbox-is-adapter" | "sandbox-mismatch" | "sandbox-overlaps-adapter";
+export type UnsafeConformanceProbeReason =
+  | "no-inert-install"
+  | "sandbox-is-adapter"
+  | "sandbox-mismatch"
+  | "sandbox-overlaps-adapter"
+  | "target-resolution-failed";
 
 /**
  * The probe refused to install its fixture assets because it could not show the
@@ -274,7 +307,7 @@ export type UnsafeConformanceProbeReason = "no-inert-install" | "sandbox-is-adap
  */
 export class UnsafeConformanceProbeError extends Error {
   readonly code = "UNSAFE_CONFORMANCE_PROBE";
-  constructor(readonly adapterId: string, readonly reason: UnsafeConformanceProbeReason) {
+  constructor(readonly adapterId: string, readonly reason: UnsafeConformanceProbeReason, options?: { cause?: unknown }) {
     super(
       reason === "no-inert-install"
         ? `Refusing to probe adapter ${adapterId}: it was not created by a Conduit adapter factory, so installing probe assets could modify its bound host. Pass an installSandbox adapter bound to a disposable target.`
@@ -282,7 +315,10 @@ export class UnsafeConformanceProbeError extends Error {
           ? `Refusing to probe adapter ${adapterId}: installSandbox must be a separate adapter bound to a disposable target, not the adapter under test.`
           : reason === "sandbox-mismatch"
             ? `Refusing to probe adapter ${adapterId}: installSandbox must have the same id and capabilities as the adapter under test.`
-            : `Refusing to probe adapter ${adapterId}: installSandbox resolves a probe asset to the same target, or registers through the same installAsset function, as the adapter under test.`,
+            : reason === "sandbox-overlaps-adapter"
+              ? `Refusing to probe adapter ${adapterId}: installSandbox resolves a probe asset to the same target, or registers through the same installAsset function, as the adapter under test.`
+              : `Refusing to probe adapter ${adapterId}: resolveTarget threw while checking the installSandbox targets.`,
+      options,
     );
     this.name = "UnsafeConformanceProbeError";
   }
@@ -305,7 +341,14 @@ export interface ProbeOptions {
  * `UnsafeConformanceProbeError` when neither is available.
  */
 export async function probeHostConformance(adapter: AgentHostAdapter, options: ProbeOptions = {}): Promise<readonly ConformanceResult[]> {
-  const install = probeInstaller(adapter, options);
+  return (await runProbe(adapter, options)).results;
+}
+
+async function runProbe(
+  adapter: AgentHostAdapter,
+  options: ProbeOptions,
+): Promise<{ results: readonly ConformanceResult[]; installEvidence: InstallEvidence }> {
+  const { install, mode } = probeInstaller(adapter, options);
   const results: ConformanceResult[] = [];
   const caps = normalizeCapabilities(adapter.capabilities());
   const validFidelities: readonly IntegrationFidelity[] = ["native", "approximated", "observational", "static-only", "unavailable"];
@@ -340,7 +383,7 @@ export async function probeHostConformance(adapter: AgentHostAdapter, options: P
       : combined.modelContext === "conduit-private-context";
     results.push({ check: `decision-context-${phase}`, status: combined.decision === expected && Boolean(combined.reason) && combinedContextMatches ? "pass" : "fail" });
   }
-  return Object.freeze(results);
+  return { results: Object.freeze(results), installEvidence: mode };
 }
 
 const probeAssets: readonly PortableAsset[] = Object.freeze(
@@ -351,38 +394,121 @@ const probeAssets: readonly PortableAsset[] = Object.freeze(
   })),
 );
 
-function probeInstaller(adapter: AgentHostAdapter, options: ProbeOptions): AgentHostAdapter["install"] {
+interface ProbeInstaller {
+  install: AgentHostAdapter["install"];
+  mode: InstallEvidence;
+}
+
+function probeInstaller(adapter: AgentHostAdapter, options: ProbeOptions): ProbeInstaller {
   const sandbox = options.installSandbox;
-  if (sandbox) {
-    if (sandbox === adapter) throw new UnsafeConformanceProbeError(adapter.id, "sandbox-is-adapter");
-    const sameCapabilities = JSON.stringify(normalizeCapabilities(sandbox.capabilities()))
-      === JSON.stringify(normalizeCapabilities(adapter.capabilities()));
-    if (sandbox.id !== adapter.id || !sameCapabilities) throw new UnsafeConformanceProbeError(adapter.id, "sandbox-mismatch");
-    if (sandboxOverlapsAdapter(factoryInstalls.get(adapter), factoryInstalls.get(sandbox))) {
+  if (!sandbox) {
+    const factory = factoryInstalls.get(adapter);
+    if (!factory) throw new UnsafeConformanceProbeError(adapter.id, "no-inert-install");
+    return { install: factory.inert, mode: "inert" };
+  }
+  if (sandbox === adapter) throw new UnsafeConformanceProbeError(adapter.id, "sandbox-is-adapter");
+  const sameCapabilities = JSON.stringify(normalizeCapabilities(sandbox.capabilities()))
+    === JSON.stringify(normalizeCapabilities(adapter.capabilities()));
+  if (sandbox.id !== adapter.id || !sameCapabilities) throw new UnsafeConformanceProbeError(adapter.id, "sandbox-mismatch");
+  const adapterFactory = factoryInstalls.get(adapter);
+  const sandboxFactory = factoryInstalls.get(sandbox);
+  if (adapterFactory?.installAsset && adapterFactory.installAsset === sandboxFactory?.installAsset) {
+    throw new UnsafeConformanceProbeError(adapter.id, "sandbox-overlaps-adapter");
+  }
+  if (!sandboxFactory?.resolveTarget || !sandboxFactory.installResolved) {
+    return { install: assets => sandbox.install(assets), mode: "sandbox" };
+  }
+  // Resolve each sandbox target exactly once and install to those same values,
+  // so a resolver that answers differently per call cannot pass the check with
+  // one target and write to another.
+  const sandboxTargets = resolveProbeTargets(adapter.id, sandboxFactory.resolveTarget);
+  if (adapterFactory?.resolveTarget) {
+    const adapterTargets = resolveProbeTargets(adapter.id, adapterFactory.resolveTarget);
+    const taken = new Set([...adapterTargets.values()].filter(isTarget).map(canonicalTarget));
+    if ([...sandboxTargets.values()].filter(isTarget).some(target => taken.has(canonicalTarget(target)))) {
       throw new UnsafeConformanceProbeError(adapter.id, "sandbox-overlaps-adapter");
     }
-    return assets => sandbox.install(assets);
   }
-  const factory = factoryInstalls.get(adapter);
-  if (!factory) throw new UnsafeConformanceProbeError(adapter.id, "no-inert-install");
-  return factory.inert;
+  const installResolved = sandboxFactory.installResolved;
+  return { install: assets => installResolved(assets, sandboxTargets), mode: "sandbox" };
+}
+
+const isTarget = (target: string | undefined): target is string => Boolean(target);
+
+function resolveProbeTargets(
+  adapterId: string,
+  resolveTarget: ManifestHarnessOptions["resolveTarget"],
+): ReadonlyMap<string, string | undefined> {
+  try {
+    return new Map(probeAssets.map(asset => [asset.id, resolveTarget(asset)]));
+  } catch (cause) {
+    throw new UnsafeConformanceProbeError(adapterId, "target-resolution-failed", { cause });
+  }
 }
 
 /**
- * Detects a sandbox that would install into the same place as the adapter under
- * test, when Conduit built both and can see their bindings. It compares the
- * caller-resolved target of every probe asset, or the `installAsset` function
- * itself. A hand-written sandbox, or one whose `write` ignores its target,
- * cannot be checked.
+ * Best-effort canonical form of a filesystem target, used only to detect a
+ * sandbox that would write where the adapter under test writes. It resolves
+ * relative paths, `.` and duplicate separators, follows symlinks in the
+ * nearest existing ancestor, and case-folds when that ancestor's filesystem
+ * treats names case-insensitively. It never creates or modifies anything.
  */
-function sandboxOverlapsAdapter(adapter: FactoryInstall | undefined, sandbox: FactoryInstall | undefined): boolean {
-  if (!adapter || !sandbox) return false;
-  if (adapter.installAsset && adapter.installAsset === sandbox.installAsset) return true;
-  if (!adapter.resolveTarget || !sandbox.resolveTarget) return false;
-  return probeAssets.some(asset => {
-    const target = adapter.resolveTarget?.(asset);
-    return target !== undefined && target === sandbox.resolveTarget?.(asset);
-  });
+function canonicalTarget(target: string): string {
+  let existing = resolve(target);
+  const missing: string[] = [];
+  while (!existsSync(existing) && dirname(existing) !== existing) {
+    missing.unshift(basename(existing));
+    existing = dirname(existing);
+  }
+  let real = existing;
+  try {
+    real = realpathSync.native(existing);
+  } catch {
+    // Keep the resolved path; an unreadable ancestor still compares textually.
+  }
+  const canonical = join(real, ...missing);
+  return namesAreCaseInsensitive(real) ? canonical.toLowerCase() : canonical;
+}
+
+const flipFirstLetter = (name: string): string => {
+  const index = [...name].findIndex(char => char.toLowerCase() !== char.toUpperCase());
+  if (index < 0) return name;
+  const chars = [...name];
+  const char = chars[index] ?? "";
+  chars[index] = char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase();
+  return chars.join("");
+};
+
+/**
+ * Detects case-insensitive name lookup by statting an existing entry under a
+ * case-flipped name. It checks an entry inside `directory` first, so the answer
+ * describes the filesystem new targets would land on, then falls back to
+ * `directory` and its ancestors. When nothing can be tested it reports
+ * case-insensitive, which can only cause extra refusals.
+ */
+function namesAreCaseInsensitive(directory: string): boolean {
+  const sameEntry = (path: string, variant: string): boolean => {
+    try {
+      const a = statSync(path);
+      const b = statSync(variant);
+      return a.ino === b.ino && a.dev === b.dev;
+    } catch {
+      return false;
+    }
+  };
+  let entries: string[] = [];
+  try {
+    if (statSync(directory).isDirectory()) entries = readdirSync(directory);
+  } catch {
+    entries = [];
+  }
+  const inside = entries.find(name => flipFirstLetter(name) !== name);
+  if (inside) return sameEntry(join(directory, inside), join(directory, flipFirstLetter(inside)));
+  for (let path = directory; dirname(path) !== path; path = dirname(path)) {
+    const name = basename(path);
+    if (flipFirstLetter(name) !== name) return sameEntry(path, join(dirname(path), flipFirstLetter(name)));
+  }
+  return true;
 }
 
 /** Added to every report entry whose probe did not run the caller's install I/O. */
@@ -403,16 +529,12 @@ export interface EvidenceInput {
 export async function createConformanceReport(inputs: readonly EvidenceInput[]): Promise<ConformanceReport> {
   const adapters = await Promise.all([...inputs].sort((a, b) => a.adapter.id.localeCompare(b.adapter.id)).map(async input => {
     const capabilities = normalizeCapabilities(input.adapter.capabilities());
-    const results = Object.freeze(
-      [...(await probeHostConformance(input.adapter, { installSandbox: input.installSandbox }))].sort((a, b) =>
-        a.check.localeCompare(b.check),
-      ),
-    );
-    // probeHostConformance throws unless it installed through the sandbox or the
-    // factory's inert path, so this is the mode that actually ran.
-    const installEvidence: InstallEvidence = input.installSandbox ? "sandbox" : "inert";
+    const probe = await runProbe(input.adapter, { installSandbox: input.installSandbox });
+    const results = Object.freeze([...probe.results].sort((a, b) => a.check.localeCompare(b.check)));
+    const installEvidence = probe.installEvidence;
     const limitations = new Set([
-      ...(input.limitations ?? []),
+      // Only the probe decides whether install I/O ran; a caller cannot claim it.
+      ...(input.limitations ?? []).filter(limitation => limitation !== inertInstallLimitation),
       ...deriveConformanceLimitations(input.adapter.capabilities(), results),
       ...(installEvidence === "inert" ? [inertInstallLimitation] : []),
     ]);
@@ -428,7 +550,7 @@ export async function createConformanceReport(inputs: readonly EvidenceInput[]):
       results,
     };
   }));
-  return Object.freeze({ schemaVersion: "2", adapters: Object.freeze(adapters) });
+  return Object.freeze({ schemaVersion: "3", adapters: Object.freeze(adapters) });
 }
 
 const lifecyclePhases = ["session-start", "before-model", "before-tool", "after-tool", "stop"] as const;
@@ -466,17 +588,35 @@ export function serializeConformanceReport(report: ConformanceReport): string {
   return `${JSON.stringify(report, null, 2)}\n`;
 }
 
-/** Parse only the current evidence contract; older reports fail explicitly. */
-export function parseConformanceReport(serialized: string): ConformanceReport {
+/**
+ * Parse the current evidence contract (version 3) or the previous one (version
+ * 2). Other versions fail explicitly. Only `installEvidence` is checked beyond
+ * the version.
+ */
+export function parseConformanceReport(serialized: string): ConformanceReport | ConformanceReportV2 {
   const value: unknown = JSON.parse(serialized);
-  if (!value || typeof value !== "object" || !("schemaVersion" in value) || value.schemaVersion !== "2") {
+  if (!value || typeof value !== "object" || !("schemaVersion" in value) || (value.schemaVersion !== "2" && value.schemaVersion !== "3")) {
     throw new UnsupportedConformanceSchemaVersionError(
       value && typeof value === "object" && "schemaVersion" in value
         ? value.schemaVersion
         : undefined,
     );
   }
-  return value as ConformanceReport;
+  const adapters: unknown = "adapters" in value ? value.adapters : undefined;
+  if (!Array.isArray(adapters)) {
+    if (value.schemaVersion === "3") throw new InvalidConformanceReportError("adapters must be an array");
+    return value as ConformanceReportV2;
+  }
+  adapters.forEach((entry: unknown, index) => {
+    const installEvidence: unknown = entry && typeof entry === "object" && "installEvidence" in entry ? entry.installEvidence : undefined;
+    if (value.schemaVersion === "2" && installEvidence !== undefined) {
+      throw new InvalidConformanceReportError(`adapters[${index}].installEvidence is not part of schema version 2`);
+    }
+    if (value.schemaVersion === "3" && installEvidence !== "inert" && installEvidence !== "sandbox") {
+      throw new InvalidConformanceReportError(`adapters[${index}].installEvidence must be "inert" or "sandbox"`);
+    }
+  });
+  return value.schemaVersion === "3" ? value as ConformanceReport : value as ConformanceReportV2;
 }
 
 const lifecycle = (
@@ -620,7 +760,7 @@ export const createStrandsAdapter = (bridge: FrameworkBridge): AgentHostAdapter 
 export const createVoltAgentAdapter = (bridge: FrameworkBridge): AgentHostAdapter =>
   createInProcessHostAdapter({ id: "voltagent", capabilities: voltAgentCapabilities, ...bridge });
 
-export function renderConformanceMatrix(report: ConformanceReport): string {
+export function renderConformanceMatrix(report: ConformanceReport | ConformanceReportV2): string {
   const phases: readonly LifecyclePhase[] = ["session-start", "before-model", "before-tool", "after-tool", "stop"];
   const rows = report.adapters.map(({ evidenceScope, adapterId, adapterVersion, hostId, hostVersion, capabilities, limitations, results }) => {
     const status = results.every(result => result.status === "pass") ? "pass" : "fail";
