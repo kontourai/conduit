@@ -166,7 +166,19 @@ routing policy never enter Conduit.
 
 ## Conformance evidence
 
-`probeHostConformance(adapter)` runs executable checks against an adapter:
+`probeHostConformance(adapter, options?)` runs executable checks against an
+adapter. It never installs probe assets through the adapter under test. When
+`options.installSandbox` is given, it calls `options.installSandbox(root)` with
+a fresh, empty, private temporary directory and installs through the adapter it
+returns. Without a sandbox, for an adapter created by a Conduit factory, it runs
+the adapter's target mapping and fidelity rules without the caller's `write` or
+`installAsset` binding. Any other adapter makes it throw
+`UnsafeConformanceProbeError` (`code: "UNSAFE_CONFORMANCE_PROBE"`) before
+installing anything. The default path performs no install I/O, so write
+failures go undetected. Only a sandbox exercises the caller's binding. For a
+Conduit file adapter, every sandbox target must lie inside that root, and the
+probe removes the root afterwards. The structural checks and what they cannot
+catch are listed in [Getting started](getting-started.md). The checks are:
 
 - `capability-completeness`: all five phases, both influence values per phase,
   and all six asset kinds are declared with valid fidelity values.
@@ -181,9 +193,10 @@ routing policy never enter Conduit.
   gets both the decision downgrade and the context removal the phase requires.
 
 `createConformanceReport(inputs)` probes each adapter and builds a
-`ConformanceReport`. Each adapter entry records its evidence scope, adapter and
-host identity and version, normalized capabilities, sorted probe results, and
-sorted `limitations`. Adapters are sorted by id and nothing in the report is
+`ConformanceReport`. Each adapter entry records its evidence scope, its
+`installEvidence` (`inert` or `sandbox`, the install path the probe actually
+ran), adapter and host identity and version, normalized capabilities, sorted
+probe results, and sorted `limitations`. Adapters are sorted by id and nothing in the report is
 timestamped, so the same inputs always serialize to the same bytes.
 
 `limitations` merges two sources and removes duplicates:
@@ -192,14 +205,19 @@ timestamped, so the same inputs always serialize to the same bytes.
   `capability.<path>=<fidelity>` entry for every capability that is not
   `native`, such as `capability.influence.stop.decision=unavailable`, and one
   `probe.<check>=fail` entry for every failed probe.
+- `probe.install-io=not-exercised` for every `inert` entry, because the probe
+  did not run the caller's install I/O.
 - Optional explanatory prose that the caller passes in.
 
 Native capabilities and passing probes produce no limitation.
 
-The report has `schemaVersion: "2"`, which records per-phase influence.
-`parseConformanceReport()` accepts only that version and throws
-`UnsupportedConformanceSchemaVersionError` for any other, rather than
-reinterpreting older evidence.
+The report has `schemaVersion: "3"`, which records per-phase influence and
+each entry's `installEvidence`. `parseConformanceReport()` also reads version
+2 reports, whose entries have no `installEvidence`, so whether install I/O ran
+is unknown for them. It throws `UnsupportedConformanceSchemaVersionError` for
+any other version, rather than reinterpreting evidence, and
+`InvalidConformanceReportError` when `installEvidence` is missing or invalid
+in version 3 or present in version 2.
 
 ## Evidence scope
 

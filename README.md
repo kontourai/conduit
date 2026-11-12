@@ -25,7 +25,20 @@ Two adapter shapes ship initially:
 - `createInProcessHostAdapter` for SDKs and frameworks with programmatic
   lifecycle and asset-registration surfaces.
 
-`probeHostConformance()` produces executable capability evidence. Installation
+`probeHostConformance()` produces executable capability evidence. It never
+installs its probe assets through the adapter under test, so probing an adapter
+bound to a real host leaves that host unchanged. For an adapter created by a
+Conduit factory, the probe runs the adapter's target mapping and fidelity rules
+without calling its `write` or `installAsset` binding, so a binding that fails
+to write still passes. Reports mark such entries `installEvidence: "inert"`
+with the limitation `probe.install-io=not-exercised`. To exercise your own
+install I/O, pass `{ installSandbox: root => createAdapter(bindingFor(root)) }`.
+The probe creates a fresh, empty, private temporary root, installs through the
+adapter your factory builds for it, checks each resolved target lies inside
+the root before writing it, and removes the root. Those entries are marked
+`installEvidence: "sandbox"`. [Getting started](docs/getting-started.md) lists
+what the check cannot catch. Any other adapter is refused with
+`UnsafeConformanceProbeError` before anything is installed. Installation
 receipts contain asset identities, kinds, and SHA-256 digests, never asset
 contents, host-resolved targets, or credentials.
 
@@ -153,8 +166,9 @@ timestamp-free JSON in `conformance/host-conformance.json` plus the generated
 matrix in `docs/host-conformance.md`. `npm run conformance:check` fails when
 either artifact is stale and runs inside `npm run verify` and CI.
 The published `schemas/host-conformance.schema.json` defines the versioned
-machine-readable result contract. Schema version 2 records phase influence;
-`parseConformanceReport()` rejects other versions with
+machine-readable result contract. Schema version 3 records phase influence
+and how the probe installed its assets. `parseConformanceReport()` also reads
+version 2 and rejects other versions with
 `UnsupportedConformanceSchemaVersionError` instead of silently reinterpreting
 evidence.
 

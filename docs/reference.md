@@ -218,26 +218,33 @@ Kiro custom-agent configuration is the application's job.
 
 | Export | Purpose |
 | --- | --- |
-| `probeHostConformance(adapter)` | Run the executable probes, including the per-phase `lifecycle-`, `decision-`, `context-`, and `decision-context-` checks listed in [Concepts](concepts.md#conformance-evidence), and return `ConformanceResult[]` (`{ check, status: "pass" \| "fail", detail? }`) |
+| `probeHostConformance(adapter, options?)` | Run the executable probes, including the per-phase `lifecycle-`, `decision-`, `context-`, and `decision-context-` checks listed in [Concepts](concepts.md#conformance-evidence), and return `ConformanceResult[]` (`{ check, status: "pass" \| "fail", detail? }`). `options` is `{ installSandbox?: InstallSandboxFactory }`. Probe assets are never installed through `adapter` |
+| `UnsafeConformanceProbeError` | Thrown when the probe cannot install safely. `code` is `"UNSAFE_CONFORMANCE_PROBE"`; `reason` is `"no-inert-install"` (adapter not created by a Conduit factory and no sandbox), `"sandbox-is-adapter"` or `"sandbox-mismatch"` (the factory returned the adapter under test, or a different id or capabilities), `"sandbox-root-not-empty"` (the factory left entries in the temporary root), `"target-resolution-failed"` (the sandbox's `resolveTarget` threw; the error is in `cause`), `"sandbox-target-outside-root"` (a target is not a normalized path inside the temporary root, passes through a symlink when written, or already exists with other hard links), or `"sandbox-write-unverified"` (after installing, the root held a symlink or special file, or an installed target was not a regular file). Only the last is raised after writes have run. See [Getting started](getting-started.md) for what the checks cannot catch |
+| `InstallSandboxFactory` | `(root: string) => AgentHostAdapter`. The probe passes a fresh, empty, private temporary directory and removes it afterwards |
+| `inertInstallLimitation` | `"probe.install-io=not-exercised"`, the limitation added to every report entry whose probe did not run the caller's install I/O |
 | `createConformanceReport(inputs)` | Probe each `EvidenceInput` and return a `ConformanceReport` sorted by adapter id |
 | `deriveConformanceLimitations(capabilities, results)` | Return the sorted `capability.*` and `probe.*` limitations |
 | `normalizeCapabilities(capabilities)` | Resolve legacy aggregate fields into explicit per-phase influence |
-| `serializeConformanceReport(report)` | JSON with two-space indentation and a trailing newline |
-| `parseConformanceReport(serialized)` | Parse a report; throws `UnsupportedConformanceSchemaVersionError` unless `schemaVersion` is `"2"` |
-| `renderConformanceMatrix(report)` | Render the Markdown matrix used in [host-conformance.md](host-conformance.md) |
+| `serializeConformanceReport(report)` | JSON with two-space indentation and a trailing newline; accepts version 3 and version 2 reports |
+| `parseConformanceReport(serialized)` | Parse a version 3 `ConformanceReport` or a version 2 `ConformanceReportV2`; throws `UnsupportedConformanceSchemaVersionError` for any other `schemaVersion` and `InvalidConformanceReportError` (`code` `"INVALID_CONFORMANCE_REPORT"`) when `installEvidence` is missing or invalid in version 3 or present in version 2 |
+| `renderConformanceMatrix(report)` | Render the Markdown matrix used in [host-conformance.md](host-conformance.md); accepts version 3 and version 2 reports |
 
-`EvidenceInput` is `{ adapter, evidenceScope, adapterVersion, hostId, hostVersion, limitations? }`.
+`EvidenceInput` is `{ adapter, installSandbox?, evidenceScope, adapterVersion, hostId, hostVersion, limitations? }`.
 `evidenceScope` is `"adapter-contract"` or `"host-bound"`.
 
-`ConformanceReport` is `{ schemaVersion: "2", adapters: AdapterConformanceEvidence[] }`.
-Each `AdapterConformanceEvidence` has `evidenceScope`, `adapterId`,
+`ConformanceReport` is `{ schemaVersion: "3", adapters: AdapterConformanceEvidence[] }`.
+`ConformanceReportV2` is the previous `{ schemaVersion: "2", adapters }` shape,
+whose entries have no `installEvidence`.
+Each `AdapterConformanceEvidence` has `evidenceScope`, `installEvidence`
+(`"inert"` or `"sandbox"`, the install path the probe ran), `adapterId`,
 `adapterVersion`, `hostId`, `hostVersion`, normalized `capabilities`,
 `limitations`, and `results`.
 
 `UnsupportedConformanceSchemaVersionError` has `code`
 `UNSUPPORTED_CONFORMANCE_SCHEMA_VERSION` and a `schemaVersion` property holding
-the version it found. `parseConformanceReport` checks only the schema version;
-it does not validate the rest of the report against the JSON Schema.
+the version it found. `parseConformanceReport` checks the schema version and
+`installEvidence` only; it does not validate the rest of the report against the
+JSON Schema.
 
 ## Repository scripts
 
