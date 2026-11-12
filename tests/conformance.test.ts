@@ -11,7 +11,7 @@ import {
   normalizeCapabilities, parseConformanceReport,
   createOpenCodeAdapter, createStrandsAdapter, createVoltAgentAdapter, openCodeCapabilities,
   probeHostConformance, renderConformanceMatrix, serializeConformanceReport,
-  strandsCapabilities, UnsafeConformanceProbeError, UnsupportedConformanceSchemaVersionError, voltAgentCapabilities, type EvidenceInput, type HostCapabilities,
+  inertInstallLimitation, strandsCapabilities, UnsafeConformanceProbeError, UnsupportedConformanceSchemaVersionError, voltAgentCapabilities, type EvidenceInput, type HostCapabilities,
 } from "../src/index.js";
 
 const all = <T>(value: T) => ({ skill: value, agent: value, hook: value, prompt: value, command: value, context: value });
@@ -121,6 +121,7 @@ describe("Conduit host conformance", () => {
     assert.deepEqual(first.adapters[1]?.limitations, [
       "a",
       "capability.lifecycle.stop=approximated",
+      "probe.install-io=not-exercised",
       "z",
     ]);
     const markdown = renderConformanceMatrix(first);
@@ -268,6 +269,7 @@ describe("Conduit host conformance", () => {
       "probe.decision-context-stop=fail",
       "probe.decision-session-start=fail",
       "probe.decision-stop=fail",
+      "probe.install-io=not-exercised",
       "probe.lifecycle-after-tool=fail",
       "probe.lifecycle-before-model=fail",
       "probe.lifecycle-before-tool=fail",
@@ -383,6 +385,71 @@ describe("Conformance probe host safety", () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
       rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a sandbox built on the same binding, leaving the real home byte-identical", async () => {
+    const home = seedUserHome();
+    try {
+      const before = snapshot(home);
+      const binding = claudeHomeBinding(home);
+      const adapter = createClaudeCodeAdapter(binding);
+      await assert.rejects(probeHostConformance(adapter, { installSandbox: createClaudeCodeAdapter(binding) }), (error: unknown) =>
+        error instanceof UnsafeConformanceProbeError && error.reason === "sandbox-overlaps-adapter");
+      // A fresh binding object over the same directory resolves the same targets.
+      await assert.rejects(probeHostConformance(adapter, { installSandbox: createClaudeCodeAdapter(claudeHomeBinding(home)) }), (error: unknown) =>
+        error instanceof UnsafeConformanceProbeError && error.reason === "sandbox-overlaps-adapter");
+      assert.deepEqual(snapshot(home), before);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("never calls an in-process adapter's installAsset during the default probe", async () => {
+    const registered: string[] = [];
+    const installAsset = (asset: PortableAsset) => { registered.push(asset.id); };
+    const applyOutcome = async (_event: unknown, outcome: { decision: "allow" | "deny" | "observe"; reason?: string; modelContext?: string }) => outcome;
+    for (const adapter of [
+      createStrandsAdapter({ installAsset, applyOutcome }),
+      createInProcessHostAdapter({ id: "fixture-sdk", capabilities: native, installAsset, applyOutcome }),
+    ]) {
+      assert.ok((await probeHostConformance(adapter)).every(result => result.status === "pass"), adapter.id);
+    }
+    assert.deepEqual(registered, []);
+    const adapter = createStrandsAdapter({ installAsset, applyOutcome });
+    await assert.rejects(probeHostConformance(adapter, { installSandbox: createStrandsAdapter({ installAsset, applyOutcome }) }), (error: unknown) =>
+      error instanceof UnsafeConformanceProbeError && error.reason === "sandbox-overlaps-adapter");
+    const sandboxed: string[] = [];
+    assert.ok((await probeHostConformance(adapter, { installSandbox: createStrandsAdapter({ installAsset: asset => { sandboxed.push(asset.id); }, applyOutcome }) }))
+      .every(result => result.status === "pass"));
+    assert.deepEqual(registered, []);
+    assert.equal(sandboxed.length, 6);
+  });
+
+  it("records whether install I/O ran, so an inert probe cannot hide a broken write", async () => {
+    const failingWrite = { resolveTarget: (asset: PortableAsset) => `/fixture/${asset.kind}/${asset.id}`, write: () => { throw new Error("disk full"); } };
+    const adapter = createClaudeCodeAdapter(failingWrite);
+    await assert.rejects(adapter.install([{ id: "a", kind: "skill", content: "x" }]), /disk full/);
+    const inert = await createConformanceReport([{ adapter, evidenceScope: "host-bound", adapterVersion: "1", hostId: "fixture", hostVersion: "1" }]);
+    assert.equal(inert.adapters[0]?.installEvidence, "inert");
+    assert.ok(inert.adapters[0]?.limitations.includes(inertInstallLimitation));
+    assert.equal(inertInstallLimitation, "probe.install-io=not-exercised");
+    // Exercising the same broken I/O through a sandbox surfaces the failure.
+    await assert.rejects(probeHostConformance(adapter, { installSandbox: createClaudeCodeAdapter({ ...failingWrite, resolveTarget: asset => `/scratch/${asset.kind}/${asset.id}` }) }), /disk full/);
+    const sandbox = createClaudeCodeAdapter({ resolveTarget: asset => `/scratch/${asset.kind}/${asset.id}`, write: () => {} });
+    const sandboxed = await createConformanceReport([{ adapter, installSandbox: sandbox, evidenceScope: "host-bound", adapterVersion: "1", hostId: "fixture", hostVersion: "1" }]);
+    assert.equal(sandboxed.adapters[0]?.installEvidence, "sandbox");
+    assert.ok(!sandboxed.adapters[0]?.limitations.includes(inertInstallLimitation));
+  });
+
+  it("keeps the published schema in step with every emitted report field", () => {
+    const schema = JSON.parse(readFileSync(new URL("../../schemas/host-conformance.schema.json", import.meta.url), "utf8"));
+    const committed = parseConformanceReport(readFileSync(new URL("../../conformance/host-conformance.json", import.meta.url), "utf8"));
+    const allowed = Object.keys(schema.$defs.adapter.properties);
+    assert.ok(committed.adapters.length > 0);
+    for (const entry of committed.adapters) {
+      for (const key of Object.keys(entry)) assert.ok(allowed.includes(key), key);
+      assert.ok(schema.$defs.adapter.properties.installEvidence.enum.includes(entry.installEvidence), entry.adapterId);
     }
   });
 

@@ -173,7 +173,10 @@ fidelity rules without the caller's `write` or `installAsset` binding. Otherwise
 it installs through `options.installSandbox`, a separate adapter with the same
 id and capabilities that the caller bound to a disposable target, or throws
 `UnsafeConformanceProbeError` (`code: "UNSAFE_CONFORMANCE_PROBE"`) before
-installing anything. The checks are:
+installing anything. The default path performs no install I/O, so write
+failures go undetected. Only a sandbox exercises the caller's binding. When
+Conduit built both adapters, a sandbox that resolves a probe asset to the same
+target, or shares the same `installAsset` function, is refused. The checks are:
 
 - `capability-completeness`: all five phases, both influence values per phase,
   and all six asset kinds are declared with valid fidelity values.
@@ -188,9 +191,10 @@ installing anything. The checks are:
   gets both the decision downgrade and the context removal the phase requires.
 
 `createConformanceReport(inputs)` probes each adapter and builds a
-`ConformanceReport`. Each adapter entry records its evidence scope, adapter and
-host identity and version, normalized capabilities, sorted probe results, and
-sorted `limitations`. Adapters are sorted by id and nothing in the report is
+`ConformanceReport`. Each adapter entry records its evidence scope, its
+`installEvidence` (`inert` or `sandbox`, the install path the probe actually
+ran), adapter and host identity and version, normalized capabilities, sorted
+probe results, and sorted `limitations`. Adapters are sorted by id and nothing in the report is
 timestamped, so the same inputs always serialize to the same bytes.
 
 `limitations` merges two sources and removes duplicates:
@@ -199,6 +203,8 @@ timestamped, so the same inputs always serialize to the same bytes.
   `capability.<path>=<fidelity>` entry for every capability that is not
   `native`, such as `capability.influence.stop.decision=unavailable`, and one
   `probe.<check>=fail` entry for every failed probe.
+- `probe.install-io=not-exercised` for every `inert` entry, because the probe
+  did not run the caller's install I/O.
 - Optional explanatory prose that the caller passes in.
 
 Native capabilities and passing probes produce no limitation.

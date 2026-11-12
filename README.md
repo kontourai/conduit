@@ -29,9 +29,12 @@ Two adapter shapes ship initially:
 installs its probe assets through the adapter under test, so probing an adapter
 bound to a real host leaves that host unchanged. For an adapter created by a
 Conduit factory, the probe runs the adapter's target mapping and fidelity rules
-without calling its `write` or `installAsset` binding. To exercise your own
+without calling its `write` or `installAsset` binding, so a binding that fails
+to write still passes. Reports mark such entries `installEvidence: "inert"`
+with the limitation `probe.install-io=not-exercised`. To exercise your own
 install I/O, pass `{ installSandbox }`, a separate adapter with the same id and
-capabilities bound to a disposable target. Any other adapter is refused with
+capabilities bound to a disposable target; those entries are marked
+`installEvidence: "sandbox"`. Any other adapter is refused with
 `UnsafeConformanceProbeError` before anything is installed. Installation
 receipts contain asset identities, kinds, and SHA-256 digests, never asset
 contents, host-resolved targets, or credentials.

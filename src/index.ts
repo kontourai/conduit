@@ -94,12 +94,18 @@ const canInfluence = (fidelity: IntegrationFidelity): boolean =>
   fidelity === "native" || fidelity === "approximated";
 
 /**
- * Install paths with the adapter's own target mapping, fidelity rules, and
- * receipt shape, but none of the caller's I/O. Only Conduit's adapter factories
- * register here, so a probe can tell an adapter whose writes it controls from an
- * arbitrary object that merely has an `install` method.
+ * What a Conduit factory knows about an adapter it built: an install path with
+ * the adapter's own target mapping, fidelity rules, and receipt shape but none
+ * of the caller's I/O, plus the binding that I/O would go through. Only
+ * Conduit's adapter factories register here, so a probe can tell an adapter
+ * whose writes it controls from an arbitrary object with an `install` method.
  */
-const inertInstallers = new WeakMap<AgentHostAdapter, AgentHostAdapter["install"]>();
+interface FactoryInstall {
+  inert: AgentHostAdapter["install"];
+  resolveTarget?: ManifestHarnessOptions["resolveTarget"];
+  installAsset?: InProcessHostOptions["installAsset"];
+}
+const factoryInstalls = new WeakMap<AgentHostAdapter, FactoryInstall>();
 
 /** Harness adapter with host-owned path mapping and I/O. Conduit never guesses config locations. */
 export function createManifestHarnessAdapter(options: ManifestHarnessOptions): AgentHostAdapter {
@@ -126,7 +132,7 @@ export function createManifestHarnessAdapter(options: ManifestHarnessOptions): A
       return projectCapability(options.capabilities, event, outcome);
     },
   };
-  inertInstallers.set(adapter, assets => install(assets, undefined));
+  factoryInstalls.set(adapter, { inert: assets => install(assets, undefined), resolveTarget: options.resolveTarget });
   return adapter;
 }
 
@@ -164,15 +170,24 @@ export function createInProcessHostAdapter(options: InProcessHostOptions): Agent
       );
     },
   };
-  inertInstallers.set(adapter, assets => install(assets, false));
+  factoryInstalls.set(adapter, { inert: assets => install(assets, false), installAsset: options.installAsset });
   return adapter;
 }
 
 export interface ConformanceResult { check: string; status: "pass" | "fail"; detail?: string }
 
+export type InstallEvidence = "inert" | "sandbox";
+
 export interface AdapterConformanceEvidence {
   /** What the executable probe actually exercised. */
   evidenceScope: "adapter-contract" | "host-bound";
+  /**
+   * How the probe installed its assets. `inert` ran the adapter's target
+   * mapping and receipt without the caller's install I/O; `sandbox` installed
+   * through a caller-supplied `installSandbox` adapter. Reports written before
+   * this field existed omit it; treat absence as unknown.
+   */
+  installEvidence?: InstallEvidence;
   adapterId: string;
   adapterVersion: string;
   hostId: string;
@@ -251,7 +266,7 @@ export function deriveConformanceLimitations(
   return Object.freeze([...limitations].sort());
 }
 
-export type UnsafeConformanceProbeReason = "no-inert-install" | "sandbox-is-adapter" | "sandbox-mismatch";
+export type UnsafeConformanceProbeReason = "no-inert-install" | "sandbox-is-adapter" | "sandbox-mismatch" | "sandbox-overlaps-adapter";
 
 /**
  * The probe refused to install its fixture assets because it could not show the
@@ -265,7 +280,9 @@ export class UnsafeConformanceProbeError extends Error {
         ? `Refusing to probe adapter ${adapterId}: it was not created by a Conduit adapter factory, so installing probe assets could modify its bound host. Pass an installSandbox adapter bound to a disposable target.`
         : reason === "sandbox-is-adapter"
           ? `Refusing to probe adapter ${adapterId}: installSandbox must be a separate adapter bound to a disposable target, not the adapter under test.`
-          : `Refusing to probe adapter ${adapterId}: installSandbox must have the same id and capabilities as the adapter under test.`,
+          : reason === "sandbox-mismatch"
+            ? `Refusing to probe adapter ${adapterId}: installSandbox must have the same id and capabilities as the adapter under test.`
+            : `Refusing to probe adapter ${adapterId}: installSandbox resolves a probe asset to the same target, or registers through the same installAsset function, as the adapter under test.`,
     );
     this.name = "UnsafeConformanceProbeError";
   }
@@ -295,8 +312,8 @@ export async function probeHostConformance(adapter: AgentHostAdapter, options: P
   const influenceValues = Object.values(caps.influence).flatMap(value => [value.decision, value.contextInjection]);
   const capabilityValues = [...Object.values(caps.lifecycle), ...influenceValues, ...Object.values(caps.install)];
   results.push({ check: "capability-completeness", status: Object.keys(caps.lifecycle).length === 5 && Object.keys(caps.influence).length === 5 && Object.keys(caps.install).length === 6 && capabilityValues.every(value => validFidelities.includes(value)) ? "pass" : "fail" });
-  const kinds: readonly AssetKind[] = ["skill", "agent", "hook", "prompt", "command", "context"];
-  const receipt = await install(kinds.map(kind => ({ id: `conformance-${kind}`, kind, content: `conduit-private-${kind}-content` })));
+  const kinds = probeAssets.map(asset => asset.kind);
+  const receipt = await install(probeAssets);
   const serializedReceipt = JSON.stringify(receipt);
   results.push({ check: "install-fidelity", status: kinds.every(kind => {
     const expectedInstalled = caps.install[kind] !== "unavailable";
@@ -326,6 +343,14 @@ export async function probeHostConformance(adapter: AgentHostAdapter, options: P
   return Object.freeze(results);
 }
 
+const probeAssets: readonly PortableAsset[] = Object.freeze(
+  (["skill", "agent", "hook", "prompt", "command", "context"] as const).map(kind => Object.freeze({
+    id: `conformance-${kind}`,
+    kind,
+    content: `conduit-private-${kind}-content`,
+  })),
+);
+
 function probeInstaller(adapter: AgentHostAdapter, options: ProbeOptions): AgentHostAdapter["install"] {
   const sandbox = options.installSandbox;
   if (sandbox) {
@@ -333,12 +358,35 @@ function probeInstaller(adapter: AgentHostAdapter, options: ProbeOptions): Agent
     const sameCapabilities = JSON.stringify(normalizeCapabilities(sandbox.capabilities()))
       === JSON.stringify(normalizeCapabilities(adapter.capabilities()));
     if (sandbox.id !== adapter.id || !sameCapabilities) throw new UnsafeConformanceProbeError(adapter.id, "sandbox-mismatch");
+    if (sandboxOverlapsAdapter(factoryInstalls.get(adapter), factoryInstalls.get(sandbox))) {
+      throw new UnsafeConformanceProbeError(adapter.id, "sandbox-overlaps-adapter");
+    }
     return assets => sandbox.install(assets);
   }
-  const inert = inertInstallers.get(adapter);
-  if (!inert) throw new UnsafeConformanceProbeError(adapter.id, "no-inert-install");
-  return inert;
+  const factory = factoryInstalls.get(adapter);
+  if (!factory) throw new UnsafeConformanceProbeError(adapter.id, "no-inert-install");
+  return factory.inert;
 }
+
+/**
+ * Detects a sandbox that would install into the same place as the adapter under
+ * test, when Conduit built both and can see their bindings. It compares the
+ * caller-resolved target of every probe asset, or the `installAsset` function
+ * itself. A hand-written sandbox, or one whose `write` ignores its target,
+ * cannot be checked.
+ */
+function sandboxOverlapsAdapter(adapter: FactoryInstall | undefined, sandbox: FactoryInstall | undefined): boolean {
+  if (!adapter || !sandbox) return false;
+  if (adapter.installAsset && adapter.installAsset === sandbox.installAsset) return true;
+  if (!adapter.resolveTarget || !sandbox.resolveTarget) return false;
+  return probeAssets.some(asset => {
+    const target = adapter.resolveTarget?.(asset);
+    return target !== undefined && target === sandbox.resolveTarget?.(asset);
+  });
+}
+
+/** Added to every report entry whose probe did not run the caller's install I/O. */
+export const inertInstallLimitation = "probe.install-io=not-exercised";
 
 export interface EvidenceInput {
   adapter: AgentHostAdapter;
@@ -360,12 +408,17 @@ export async function createConformanceReport(inputs: readonly EvidenceInput[]):
         a.check.localeCompare(b.check),
       ),
     );
+    // probeHostConformance throws unless it installed through the sandbox or the
+    // factory's inert path, so this is the mode that actually ran.
+    const installEvidence: InstallEvidence = input.installSandbox ? "sandbox" : "inert";
     const limitations = new Set([
       ...(input.limitations ?? []),
       ...deriveConformanceLimitations(input.adapter.capabilities(), results),
+      ...(installEvidence === "inert" ? [inertInstallLimitation] : []),
     ]);
     return {
       evidenceScope: input.evidenceScope,
+      installEvidence,
       adapterId: input.adapter.id,
       adapterVersion: input.adapterVersion,
       hostId: input.hostId,

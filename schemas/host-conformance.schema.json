@@ -78,6 +78,7 @@
       "required": ["evidenceScope", "adapterId", "adapterVersion", "hostId", "hostVersion", "capabilities", "limitations", "results"],
       "properties": {
         "evidenceScope": { "enum": ["adapter-contract", "host-bound"] },
+        "installEvidence": { "enum": ["inert", "sandbox"] },
         "adapterId": { "type": "string", "minLength": 1 },
         "adapterVersion": { "type": "string", "minLength": 1 },
         "hostId": { "type": "string", "minLength": 1 },

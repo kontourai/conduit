@@ -219,7 +219,8 @@ Kiro custom-agent configuration is the application's job.
 | Export | Purpose |
 | --- | --- |
 | `probeHostConformance(adapter, options?)` | Run the executable probes, including the per-phase `lifecycle-`, `decision-`, `context-`, and `decision-context-` checks listed in [Concepts](concepts.md#conformance-evidence), and return `ConformanceResult[]` (`{ check, status: "pass" \| "fail", detail? }`). `options` is `{ installSandbox? }`. Probe assets are never installed through `adapter` |
-| `UnsafeConformanceProbeError` | Thrown before any install when the probe cannot install safely. `code` is `"UNSAFE_CONFORMANCE_PROBE"`; `reason` is `"no-inert-install"` (adapter not created by a Conduit factory and no sandbox), `"sandbox-is-adapter"`, or `"sandbox-mismatch"` (different id or capabilities) |
+| `UnsafeConformanceProbeError` | Thrown before any install when the probe cannot install safely. `code` is `"UNSAFE_CONFORMANCE_PROBE"`; `reason` is `"no-inert-install"` (adapter not created by a Conduit factory and no sandbox), `"sandbox-is-adapter"`, `"sandbox-mismatch"` (different id or capabilities), or `"sandbox-overlaps-adapter"` (both factory-built, and a probe asset resolves to the same target or they share an `installAsset` function) |
+| `inertInstallLimitation` | `"probe.install-io=not-exercised"`, the limitation added to every report entry whose probe did not run the caller's install I/O |
 | `createConformanceReport(inputs)` | Probe each `EvidenceInput` and return a `ConformanceReport` sorted by adapter id |
 | `deriveConformanceLimitations(capabilities, results)` | Return the sorted `capability.*` and `probe.*` limitations |
 | `normalizeCapabilities(capabilities)` | Resolve legacy aggregate fields into explicit per-phase influence |
@@ -231,7 +232,9 @@ Kiro custom-agent configuration is the application's job.
 `evidenceScope` is `"adapter-contract"` or `"host-bound"`.
 
 `ConformanceReport` is `{ schemaVersion: "2", adapters: AdapterConformanceEvidence[] }`.
-Each `AdapterConformanceEvidence` has `evidenceScope`, `adapterId`,
+Each `AdapterConformanceEvidence` has `evidenceScope`, `installEvidence`
+(`"inert"` or `"sandbox"`; optional in the schema because older version 2
+reports omit it, so treat absence as unknown), `adapterId`,
 `adapterVersion`, `hostId`, `hostVersion`, normalized `capabilities`,
 `limitations`, and `results`.
 

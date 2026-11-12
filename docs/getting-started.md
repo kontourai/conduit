@@ -158,14 +158,28 @@ The probes call `project` on your adapter for every phase. They never install
 probe assets through it: for an adapter created by a Conduit factory, they run
 its `resolveTarget` mapping and fidelity rules but not its `write` or
 `installAsset` binding, so probing an adapter bound to a real host leaves that
-host unchanged. `resolveTarget` must therefore be a pure path mapping.
+host unchanged. `resolveTarget` must therefore be a pure path mapping. The
+probe uses the install path the factory built, so reassigning the adapter's
+`install` property has no effect on it.
+
+Because that default path performs no I/O, a `write` or `installAsset` that
+fails, or writes the wrong thing, goes undetected: the install checks still
+pass. The report says so. Its entry has `installEvidence: "inert"` and the
+limitation `probe.install-io=not-exercised`.
 
 To exercise your install I/O as well, bind a second adapter to a disposable
 target and pass it as `installSandbox`, either to `probeHostConformance(adapter,
-{ installSandbox })` or on the `EvidenceInput`. It must have the same id and
-capabilities as the adapter under test and must be a separate object. An
-adapter that was not created by a Conduit factory, or a spread copy of one, is
-refused with `UnsafeConformanceProbeError` unless you pass a sandbox.
+{ installSandbox })` or on the `EvidenceInput`. Its report entry has
+`installEvidence: "sandbox"`. The sandbox must have the same id and
+capabilities as the adapter under test and must be a separate object. When
+Conduit built both adapters, the probe also refuses a sandbox that resolves any
+probe asset to the same target, or registers through the same `installAsset`
+function, as the adapter under test. That catches a second adapter built on the
+same binding. It cannot catch a `write` that ignores its target, or a
+hand-written sandbox, so keeping the sandbox's I/O disposable is your
+responsibility. An adapter that was not created by a Conduit factory, or a
+spread copy of one, is refused with `UnsafeConformanceProbeError` unless you
+pass a sandbox.
 
 Every check that fails, and every capability that is not `native`, appears in
 the report's `limitations`. See [Conformance evidence](concepts.md#conformance-evidence).
