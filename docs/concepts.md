@@ -167,11 +167,12 @@ routing policy never enter Conduit.
 ## Conformance evidence
 
 `probeHostConformance(adapter, options?)` runs executable checks against an
-adapter. It never installs probe assets through the adapter under test. For an
-adapter created by a Conduit factory, it runs the adapter's target mapping and
-fidelity rules without the caller's `write` or `installAsset` binding. Otherwise
-it calls `options.installSandbox(root)` with a fresh, empty, private temporary
-directory and installs through the adapter it returns, or throws
+adapter. It never installs probe assets through the adapter under test. When
+`options.installSandbox` is given, it calls `options.installSandbox(root)` with
+a fresh, empty, private temporary directory and installs through the adapter it
+returns. Without a sandbox, for an adapter created by a Conduit factory, it runs
+the adapter's target mapping and fidelity rules without the caller's `write` or
+`installAsset` binding. Any other adapter makes it throw
 `UnsafeConformanceProbeError` (`code: "UNSAFE_CONFORMANCE_PROBE"`) before
 installing anything. The default path performs no install I/O, so write
 failures go undetected. Only a sandbox exercises the caller's binding. For a

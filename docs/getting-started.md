@@ -203,14 +203,18 @@ install structurally, because nothing existed inside the root beforehand:
 - It calls `resolveTarget` once per probe asset and installs to exactly those
   targets. If `resolveTarget` throws, it refuses with
   `target-resolution-failed` and the original error as `cause`.
+- When the function returns, `root` must still be empty. Anything it created
+  there, such as a link to a real file, is refused with `sandbox-root-not-empty`.
 - Before installing, every target must be an absolute, normalized path (no `.`,
   `..`, or duplicate separators) strictly inside `root`. Otherwise it refuses
   with `sandbox-target-outside-root`.
 - Immediately before each write, no existing component of the target's path
-  under `root` may be a symlink or be uninspectable. Otherwise it refuses with
+  under `root` may be a symlink or be uninspectable, and an existing target may
+  not have other hard links. Otherwise it refuses with
   `sandbox-target-outside-root` and does not write.
 - After installing, every entry under `root` must be a plain directory or
-  regular file, and every installed target must be a regular file. Otherwise it
+  regular file, and every installed target must be a regular file with a single
+  link. Otherwise it
   refuses with `sandbox-write-unverified`. This step detects problems after the
   writes have run; it does not prevent them.
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { describe, it } from "node:test";
@@ -460,6 +460,45 @@ describe("Conformance probe host safety", () => {
       }
       assert.deepEqual(snapshot(home), before);
       assert.deepEqual(readdirSync(home).sort(), ["CLAUDE.md", "settings.json"]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a root the factory did not leave empty, before any write", async () => {
+    const home = seedUserHome();
+    try {
+      const before = snapshot(home);
+      const written: string[] = [];
+      const { factory, roots } = recordingFactory(root => {
+        // A hard link to a real file at a probe target would otherwise be written through.
+        linkSync(join(home, "CLAUDE.md"), join(root, "CLAUDE.md"));
+        return createClaudeCodeAdapter({ ...claudeHomeBinding(root), write: (target, content) => { written.push(target); claudeHomeBinding(root).write(target, content); } });
+      });
+      await assert.rejects(probeHostConformance(createClaudeCodeAdapter(claudeHomeBinding(home)), { installSandbox: factory }), refused("sandbox-root-not-empty"));
+      assert.deepEqual(written, []);
+      assert.equal(existsSync(roots[0]?.root ?? ""), false);
+      assert.deepEqual(snapshot(home), before);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to write through a hard link planted in the root after the factory ran", async () => {
+    const home = seedUserHome();
+    try {
+      const before = snapshot(home);
+      const { factory, roots } = recordingFactory(root => {
+        const binding = claudeHomeBinding(root);
+        let planted = false;
+        return createClaudeCodeAdapter({ ...binding, write: (target, content) => {
+          if (!planted) { planted = true; linkSync(join(home, "CLAUDE.md"), join(root, "CLAUDE.md")); }
+          binding.write(target, content);
+        } });
+      });
+      await assert.rejects(probeHostConformance(createClaudeCodeAdapter(claudeHomeBinding(home)), { installSandbox: factory }), refused("sandbox-target-outside-root"));
+      assert.equal(existsSync(roots[0]?.root ?? ""), false);
+      assert.deepEqual(snapshot(home), before);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

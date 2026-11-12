@@ -311,6 +311,7 @@ export type UnsafeConformanceProbeReason =
   | "no-inert-install"
   | "sandbox-is-adapter"
   | "sandbox-mismatch"
+  | "sandbox-root-not-empty"
   | "sandbox-target-outside-root"
   | "sandbox-write-unverified"
   | "target-resolution-failed";
@@ -331,8 +332,9 @@ const unsafeProbeMessages: Readonly<Record<UnsafeConformanceProbeReason, string>
   "no-inert-install": "it was not created by a Conduit adapter factory, so installing probe assets could modify its bound host. Pass an installSandbox factory.",
   "sandbox-is-adapter": "the installSandbox factory returned the adapter under test.",
   "sandbox-mismatch": "the installSandbox factory returned an adapter with a different id or capabilities.",
-  "sandbox-target-outside-root": "an installSandbox target is not a normalized path inside the probe's temporary root, or passes through a symlink.",
-  "sandbox-write-unverified": "after installing, the probe's temporary root held a symlink or special file, or an installed target was not a regular file there.",
+  "sandbox-root-not-empty": "the installSandbox factory left entries in the probe's temporary root before installing.",
+  "sandbox-target-outside-root": "an installSandbox target is not a normalized path inside the probe's temporary root, passes through a symlink, or is a hard-linked file.",
+  "sandbox-write-unverified": "after installing, the probe's temporary root held a symlink or special file, or an installed target was not a regular file there with a single link.",
   "target-resolution-failed": "the installSandbox adapter's resolveTarget threw.",
 };
 
@@ -446,6 +448,9 @@ async function installInSandbox(
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "conduit-probe-")));
   try {
     const sandbox = factory(root);
+    // The root was empty when created; anything in it now was planted by the
+    // factory (a symlink or hard link to a real file, for example).
+    if (readdirSync(root).length > 0) throw new UnsafeConformanceProbeError(adapter.id, "sandbox-root-not-empty");
     if (sandbox === adapter) throw new UnsafeConformanceProbeError(adapter.id, "sandbox-is-adapter");
     const sameCapabilities = JSON.stringify(normalizeCapabilities(sandbox.capabilities()))
       === JSON.stringify(normalizeCapabilities(adapter.capabilities()));
@@ -489,15 +494,18 @@ function isInsideRoot(root: string, target: string): boolean {
 
 /**
  * True when any existing component between `root` and `target` is a symlink,
- * or cannot be inspected. A missing component ends the walk: nothing below it
- * exists yet.
+ * when the target already exists as a file with other hard links (writing it
+ * would modify those links' content), or when a component cannot be inspected.
+ * A missing component ends the walk: nothing below it exists yet.
  */
 function passesThroughSymlink(root: string, target: string): boolean {
   let path = root;
   for (const segment of relative(root, target).split(sep)) {
     path = join(path, segment);
     try {
-      if (lstatSync(path).isSymbolicLink()) return true;
+      const stats = lstatSync(path);
+      if (stats.isSymbolicLink()) return true;
+      if (path === target && stats.nlink > 1) return true;
     } catch (error) {
       return (error as NodeJS.ErrnoException).code !== "ENOENT";
     }
@@ -512,7 +520,8 @@ function verifyRootContents(adapterId: string, root: string, installed: readonly
   for (const target of installed) {
     let file = false;
     try {
-      file = lstatSync(target).isFile();
+      const stats = lstatSync(target);
+      file = stats.isFile() && stats.nlink === 1;
     } catch {
       file = false;
     }

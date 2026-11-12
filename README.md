@@ -34,8 +34,8 @@ to write still passes. Reports mark such entries `installEvidence: "inert"`
 with the limitation `probe.install-io=not-exercised`. To exercise your own
 install I/O, pass `{ installSandbox: root => createAdapter(bindingFor(root)) }`.
 The probe creates a fresh, empty, private temporary root, installs through the
-adapter your factory builds for it, verifies that every file landed inside the
-root, and removes the root. Those entries are marked
+adapter your factory builds for it, checks each resolved target lies inside
+the root before writing it, and removes the root. Those entries are marked
 `installEvidence: "sandbox"`. [Getting started](docs/getting-started.md) lists
 what the check cannot catch. Any other adapter is refused with
 `UnsafeConformanceProbeError` before anything is installed. Installation
