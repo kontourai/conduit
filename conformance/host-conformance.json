@@ -5,7 +5,7 @@
       "evidenceScope": "adapter-contract",
       "installEvidence": "inert",
       "adapterId": "claude-code",
-      "adapterVersion": "0.7.1",
+      "adapterVersion": "0.8.0",
       "hostId": "unbound",
       "hostVersion": "unbound",
       "capabilities": {
@@ -159,7 +159,7 @@
       "evidenceScope": "adapter-contract",
       "installEvidence": "inert",
       "adapterId": "codex",
-      "adapterVersion": "0.7.1",
+      "adapterVersion": "0.8.0",
       "hostId": "unbound",
       "hostVersion": "unbound",
       "capabilities": {
@@ -323,7 +323,7 @@
       "evidenceScope": "adapter-contract",
       "installEvidence": "inert",
       "adapterId": "kiro",
-      "adapterVersion": "0.7.1",
+      "adapterVersion": "0.8.0",
       "hostId": "unbound",
       "hostVersion": "unbound",
       "capabilities": {
@@ -480,7 +480,7 @@
       "evidenceScope": "adapter-contract",
       "installEvidence": "inert",
       "adapterId": "opencode",
-      "adapterVersion": "0.7.1",
+      "adapterVersion": "0.8.0",
       "hostId": "unbound",
       "hostVersion": "unbound",
       "capabilities": {
@@ -627,7 +627,7 @@
       "evidenceScope": "adapter-contract",
       "installEvidence": "inert",
       "adapterId": "pi",
-      "adapterVersion": "0.7.1",
+      "adapterVersion": "0.8.0",
       "hostId": "unbound",
       "hostVersion": "unbound",
       "capabilities": {
@@ -787,7 +787,7 @@
       "evidenceScope": "adapter-contract",
       "installEvidence": "inert",
       "adapterId": "strands",
-      "adapterVersion": "0.7.1",
+      "adapterVersion": "0.8.0",
       "hostId": "unbound",
       "hostVersion": "unbound",
       "capabilities": {
@@ -936,7 +936,7 @@
       "evidenceScope": "adapter-contract",
       "installEvidence": "inert",
       "adapterId": "voltagent",
-      "adapterVersion": "0.7.1",
+      "adapterVersion": "0.8.0",
       "hostId": "unbound",
       "hostVersion": "unbound",
       "capabilities": {
