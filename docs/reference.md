@@ -218,7 +218,8 @@ Kiro custom-agent configuration is the application's job.
 
 | Export | Purpose |
 | --- | --- |
-| `probeHostConformance(adapter)` | Run the executable probes, including the per-phase `lifecycle-`, `decision-`, `context-`, and `decision-context-` checks listed in [Concepts](concepts.md#conformance-evidence), and return `ConformanceResult[]` (`{ check, status: "pass" \| "fail", detail? }`) |
+| `probeHostConformance(adapter, options?)` | Run the executable probes, including the per-phase `lifecycle-`, `decision-`, `context-`, and `decision-context-` checks listed in [Concepts](concepts.md#conformance-evidence), and return `ConformanceResult[]` (`{ check, status: "pass" \| "fail", detail? }`). `options` is `{ installSandbox? }`. Probe assets are never installed through `adapter` |
+| `UnsafeConformanceProbeError` | Thrown before any install when the probe cannot install safely. `code` is `"UNSAFE_CONFORMANCE_PROBE"`; `reason` is `"no-inert-install"` (adapter not created by a Conduit factory and no sandbox), `"sandbox-is-adapter"`, or `"sandbox-mismatch"` (different id or capabilities) |
 | `createConformanceReport(inputs)` | Probe each `EvidenceInput` and return a `ConformanceReport` sorted by adapter id |
 | `deriveConformanceLimitations(capabilities, results)` | Return the sorted `capability.*` and `probe.*` limitations |
 | `normalizeCapabilities(capabilities)` | Resolve legacy aggregate fields into explicit per-phase influence |
@@ -226,7 +227,7 @@ Kiro custom-agent configuration is the application's job.
 | `parseConformanceReport(serialized)` | Parse a report; throws `UnsupportedConformanceSchemaVersionError` unless `schemaVersion` is `"2"` |
 | `renderConformanceMatrix(report)` | Render the Markdown matrix used in [host-conformance.md](host-conformance.md) |
 
-`EvidenceInput` is `{ adapter, evidenceScope, adapterVersion, hostId, hostVersion, limitations? }`.
+`EvidenceInput` is `{ adapter, installSandbox?, evidenceScope, adapterVersion, hostId, hostVersion, limitations? }`.
 `evidenceScope` is `"adapter-contract"` or `"host-bound"`.
 
 `ConformanceReport` is `{ schemaVersion: "2", adapters: AdapterConformanceEvidence[] }`.

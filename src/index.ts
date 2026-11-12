@@ -93,30 +93,41 @@ const projectCapability = (
 const canInfluence = (fidelity: IntegrationFidelity): boolean =>
   fidelity === "native" || fidelity === "approximated";
 
+/**
+ * Install paths with the adapter's own target mapping, fidelity rules, and
+ * receipt shape, but none of the caller's I/O. Only Conduit's adapter factories
+ * register here, so a probe can tell an adapter whose writes it controls from an
+ * arbitrary object that merely has an `install` method.
+ */
+const inertInstallers = new WeakMap<AgentHostAdapter, AgentHostAdapter["install"]>();
+
 /** Harness adapter with host-owned path mapping and I/O. Conduit never guesses config locations. */
 export function createManifestHarnessAdapter(options: ManifestHarnessOptions): AgentHostAdapter {
-  return {
+  const install = async (assets: readonly PortableAsset[], write: ManifestHarnessOptions["write"] | undefined): Promise<InstallationReceipt> => {
+    const installed: InstallationReceipt["installed"][number][] = [];
+    const skipped: InstallationReceipt["skipped"][number][] = [];
+    for (const asset of assets) {
+      const fidelity = options.capabilities.install[asset.kind];
+      const target = options.resolveTarget(asset);
+      if (fidelity === "unavailable" || !target) {
+        skipped.push({ id: asset.id, kind: asset.kind, reason: fidelity === "unavailable" ? "unsupported" : "unmapped" });
+        continue;
+      }
+      if (write) await write(target, asset.content);
+      installed.push({ id: asset.id, kind: asset.kind, digest: digest(asset.content) });
+    }
+    return Object.freeze({ hostId: options.id, installed: Object.freeze(installed), skipped: Object.freeze(skipped) });
+  };
+  const adapter: AgentHostAdapter = {
     id: options.id,
     capabilities: () => options.capabilities,
-    async install(assets) {
-      const installed: InstallationReceipt["installed"][number][] = [];
-      const skipped: InstallationReceipt["skipped"][number][] = [];
-      for (const asset of assets) {
-        const fidelity = options.capabilities.install[asset.kind];
-        const target = options.resolveTarget(asset);
-        if (fidelity === "unavailable" || !target) {
-          skipped.push({ id: asset.id, kind: asset.kind, reason: fidelity === "unavailable" ? "unsupported" : "unmapped" });
-          continue;
-        }
-        await options.write(target, asset.content);
-        installed.push({ id: asset.id, kind: asset.kind, digest: digest(asset.content) });
-      }
-      return Object.freeze({ hostId: options.id, installed: Object.freeze(installed), skipped: Object.freeze(skipped) });
-    },
+    install: assets => install(assets, options.write),
     async project(event, outcome) {
       return projectCapability(options.capabilities, event, outcome);
     },
   };
+  inertInstallers.set(adapter, assets => install(assets, undefined));
+  return adapter;
 }
 
 export interface InProcessHostOptions {
@@ -128,22 +139,23 @@ export interface InProcessHostOptions {
 
 /** SDK/framework adapter: the host supplies lifecycle influence and optional asset registration. */
 export function createInProcessHostAdapter(options: InProcessHostOptions): AgentHostAdapter {
-  return {
+  const install = async (assets: readonly PortableAsset[], register: boolean): Promise<InstallationReceipt> => {
+    const installed: InstallationReceipt["installed"][number][] = [];
+    const skipped: InstallationReceipt["skipped"][number][] = [];
+    for (const asset of assets) {
+      if (!options.installAsset || options.capabilities.install[asset.kind] === "unavailable") {
+        skipped.push({ id: asset.id, kind: asset.kind, reason: "unsupported" });
+      } else {
+        if (register) await options.installAsset(asset);
+        installed.push({ id: asset.id, kind: asset.kind, digest: digest(asset.content) });
+      }
+    }
+    return Object.freeze({ hostId: options.id, installed: Object.freeze(installed), skipped: Object.freeze(skipped) });
+  };
+  const adapter: AgentHostAdapter = {
     id: options.id,
     capabilities: () => options.capabilities,
-    async install(assets) {
-      const installed: InstallationReceipt["installed"][number][] = [];
-      const skipped: InstallationReceipt["skipped"][number][] = [];
-      for (const asset of assets) {
-        if (!options.installAsset || options.capabilities.install[asset.kind] === "unavailable") {
-          skipped.push({ id: asset.id, kind: asset.kind, reason: "unsupported" });
-        } else {
-          await options.installAsset(asset);
-          installed.push({ id: asset.id, kind: asset.kind, digest: digest(asset.content) });
-        }
-      }
-      return Object.freeze({ hostId: options.id, installed: Object.freeze(installed), skipped: Object.freeze(skipped) });
-    },
+    install: assets => install(assets, true),
     async project(event, outcome) {
       return projectCapability(
         options.capabilities,
@@ -152,6 +164,8 @@ export function createInProcessHostAdapter(options: InProcessHostOptions): Agent
       );
     },
   };
+  inertInstallers.set(adapter, assets => install(assets, false));
+  return adapter;
 }
 
 export interface ConformanceResult { check: string; status: "pass" | "fail"; detail?: string }
@@ -237,7 +251,44 @@ export function deriveConformanceLimitations(
   return Object.freeze([...limitations].sort());
 }
 
-export async function probeHostConformance(adapter: AgentHostAdapter): Promise<readonly ConformanceResult[]> {
+export type UnsafeConformanceProbeReason = "no-inert-install" | "sandbox-is-adapter" | "sandbox-mismatch";
+
+/**
+ * The probe refused to install its fixture assets because it could not show the
+ * install would leave the caller's host untouched.
+ */
+export class UnsafeConformanceProbeError extends Error {
+  readonly code = "UNSAFE_CONFORMANCE_PROBE";
+  constructor(readonly adapterId: string, readonly reason: UnsafeConformanceProbeReason) {
+    super(
+      reason === "no-inert-install"
+        ? `Refusing to probe adapter ${adapterId}: it was not created by a Conduit adapter factory, so installing probe assets could modify its bound host. Pass an installSandbox adapter bound to a disposable target.`
+        : reason === "sandbox-is-adapter"
+          ? `Refusing to probe adapter ${adapterId}: installSandbox must be a separate adapter bound to a disposable target, not the adapter under test.`
+          : `Refusing to probe adapter ${adapterId}: installSandbox must have the same id and capabilities as the adapter under test.`,
+    );
+    this.name = "UnsafeConformanceProbeError";
+  }
+}
+
+export interface ProbeOptions {
+  /**
+   * An adapter with the same id and capabilities, bound by the caller to a
+   * disposable target. The probe installs its fixture assets through it, so the
+   * caller's own I/O is exercised without touching the adapter under test.
+   */
+  installSandbox?: AgentHostAdapter;
+}
+
+/**
+ * Probe an adapter's declared capabilities, install receipts, and lifecycle
+ * projection. The probe never installs through the adapter under test: by
+ * default it uses the I/O-free install path of an adapter created by a Conduit
+ * factory, and otherwise it requires `options.installSandbox`. It throws
+ * `UnsafeConformanceProbeError` when neither is available.
+ */
+export async function probeHostConformance(adapter: AgentHostAdapter, options: ProbeOptions = {}): Promise<readonly ConformanceResult[]> {
+  const install = probeInstaller(adapter, options);
   const results: ConformanceResult[] = [];
   const caps = normalizeCapabilities(adapter.capabilities());
   const validFidelities: readonly IntegrationFidelity[] = ["native", "approximated", "observational", "static-only", "unavailable"];
@@ -245,7 +296,7 @@ export async function probeHostConformance(adapter: AgentHostAdapter): Promise<r
   const capabilityValues = [...Object.values(caps.lifecycle), ...influenceValues, ...Object.values(caps.install)];
   results.push({ check: "capability-completeness", status: Object.keys(caps.lifecycle).length === 5 && Object.keys(caps.influence).length === 5 && Object.keys(caps.install).length === 6 && capabilityValues.every(value => validFidelities.includes(value)) ? "pass" : "fail" });
   const kinds: readonly AssetKind[] = ["skill", "agent", "hook", "prompt", "command", "context"];
-  const receipt = await adapter.install(kinds.map(kind => ({ id: `conformance-${kind}`, kind, content: `conduit-private-${kind}-content` })));
+  const receipt = await install(kinds.map(kind => ({ id: `conformance-${kind}`, kind, content: `conduit-private-${kind}-content` })));
   const serializedReceipt = JSON.stringify(receipt);
   results.push({ check: "install-fidelity", status: kinds.every(kind => {
     const expectedInstalled = caps.install[kind] !== "unavailable";
@@ -275,8 +326,24 @@ export async function probeHostConformance(adapter: AgentHostAdapter): Promise<r
   return Object.freeze(results);
 }
 
+function probeInstaller(adapter: AgentHostAdapter, options: ProbeOptions): AgentHostAdapter["install"] {
+  const sandbox = options.installSandbox;
+  if (sandbox) {
+    if (sandbox === adapter) throw new UnsafeConformanceProbeError(adapter.id, "sandbox-is-adapter");
+    const sameCapabilities = JSON.stringify(normalizeCapabilities(sandbox.capabilities()))
+      === JSON.stringify(normalizeCapabilities(adapter.capabilities()));
+    if (sandbox.id !== adapter.id || !sameCapabilities) throw new UnsafeConformanceProbeError(adapter.id, "sandbox-mismatch");
+    return assets => sandbox.install(assets);
+  }
+  const inert = inertInstallers.get(adapter);
+  if (!inert) throw new UnsafeConformanceProbeError(adapter.id, "no-inert-install");
+  return inert;
+}
+
 export interface EvidenceInput {
   adapter: AgentHostAdapter;
+  /** Passed to `probeHostConformance` as `installSandbox`. */
+  installSandbox?: AgentHostAdapter;
   evidenceScope: AdapterConformanceEvidence["evidenceScope"];
   adapterVersion: string;
   hostId: string;
@@ -289,7 +356,7 @@ export async function createConformanceReport(inputs: readonly EvidenceInput[]):
   const adapters = await Promise.all([...inputs].sort((a, b) => a.adapter.id.localeCompare(b.adapter.id)).map(async input => {
     const capabilities = normalizeCapabilities(input.adapter.capabilities());
     const results = Object.freeze(
-      [...(await probeHostConformance(input.adapter))].sort((a, b) =>
+      [...(await probeHostConformance(input.adapter, { installSandbox: input.installSandbox }))].sort((a, b) =>
         a.check.localeCompare(b.check),
       ),
     );

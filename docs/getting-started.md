@@ -154,10 +154,18 @@ const json = serializeConformanceReport(report);
 const markdown = renderConformanceMatrix(report);
 ```
 
-The probes call your adapter for real: `install` is called with one probe asset
-of every kind, so your `write` or `installAsset` binding runs, and `project` is
-called for every phase. Point the bindings at a location where probe assets are
-harmless.
+The probes call `project` on your adapter for every phase. They never install
+probe assets through it: for an adapter created by a Conduit factory, they run
+its `resolveTarget` mapping and fidelity rules but not its `write` or
+`installAsset` binding, so probing an adapter bound to a real host leaves that
+host unchanged. `resolveTarget` must therefore be a pure path mapping.
+
+To exercise your install I/O as well, bind a second adapter to a disposable
+target and pass it as `installSandbox`, either to `probeHostConformance(adapter,
+{ installSandbox })` or on the `EvidenceInput`. It must have the same id and
+capabilities as the adapter under test and must be a separate object. An
+adapter that was not created by a Conduit factory, or a spread copy of one, is
+refused with `UnsafeConformanceProbeError` unless you pass a sandbox.
 
 Every check that fails, and every capability that is not `native`, appears in
 the report's `limitations`. See [Conformance evidence](concepts.md#conformance-evidence).

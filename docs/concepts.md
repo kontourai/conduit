@@ -166,7 +166,14 @@ routing policy never enter Conduit.
 
 ## Conformance evidence
 
-`probeHostConformance(adapter)` runs executable checks against an adapter:
+`probeHostConformance(adapter, options?)` runs executable checks against an
+adapter. It never installs probe assets through the adapter under test. For an
+adapter created by a Conduit factory, it runs the adapter's target mapping and
+fidelity rules without the caller's `write` or `installAsset` binding. Otherwise
+it installs through `options.installSandbox`, a separate adapter with the same
+id and capabilities that the caller bound to a disposable target, or throws
+`UnsafeConformanceProbeError` (`code: "UNSAFE_CONFORMANCE_PROBE"`) before
+installing anything. The checks are:
 
 - `capability-completeness`: all five phases, both influence values per phase,
   and all six asset kinds are declared with valid fidelity values.
